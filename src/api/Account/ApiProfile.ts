@@ -1,11 +1,10 @@
 import { ApiCall } from 'tsrpc';
-import { withErrorHandling } from '../_shared';
-import { getAppContext } from '../../server/context';
+import { getApiAppContext, withErrorHandling } from '../_shared';
 import { ReqProfile, ResProfile } from '../../shared/protocols/Account/PtlProfile';
 
 export default async function (call: ApiCall<ReqProfile, ResProfile>) {
     await withErrorHandling(call, async () => {
-        const user = await getAppContext().accounts.getProfile(call.req.token);
+        const user = await getApiAppContext(call).accounts.getProfile(call.req.token, call.conn.id);
         await call.succ({ user });
     });
 }

@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { WsServer } from 'tsrpc';
 import { serviceProto, ServiceType } from '../shared/protocols/serviceProto';
-import { createAppContext, setAppContext } from './context';
+import { clearAppContext, createAppContext, setAppContext } from './context';
 
 export interface GameServerInstance {
     server: WsServer<ServiceType>
@@ -13,6 +13,7 @@ export async function createGameServer(options: {
     port?: number
     dataDir?: string
     inMemoryDb?: boolean
+    sessionTtlMs?: number
 } = {}): Promise<GameServerInstance> {
     const server = new WsServer(serviceProto, {
         port: options.port ?? Number(process.env.PORT ?? 23414),
@@ -21,9 +22,10 @@ export async function createGameServer(options: {
 
     const appContext = await createAppContext(server, {
         dataDir: options.dataDir ?? process.env.DATA_DIR,
-        inMemoryDb: options.inMemoryDb
+        inMemoryDb: options.inMemoryDb,
+        sessionTtlMs: options.sessionTtlMs
     });
-    setAppContext(appContext);
+    setAppContext(server, appContext);
 
     server.flows.postDisconnectFlow.push(async flowData => {
         const userId = appContext.connections.unbind(flowData.conn.id);
@@ -56,7 +58,7 @@ export async function createGameServer(options: {
 
             appContext.rooms.dispose();
             appContext.connections.clear();
-            setAppContext(undefined);
+            clearAppContext(server);
         }
     };
 }

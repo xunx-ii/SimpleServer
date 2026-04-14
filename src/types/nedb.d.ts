@@ -14,6 +14,7 @@ declare module 'nedb' {
                 fieldName: keyof T | string
                 unique?: boolean
                 sparse?: boolean
+                expireAfterSeconds?: number
             },
             callback?: (err: Error | null) => void
         ): void

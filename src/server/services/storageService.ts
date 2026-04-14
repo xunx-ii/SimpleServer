@@ -9,41 +9,74 @@ export class StorageService {
     ) {
     }
 
-    async save(token: string, save: Record<string, string>) {
-        const account = await this.accounts.requireAccount(token);
+    async save(token: string, save: Record<string, string>, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         const normalizedData = normalizeSaveInput(save);
-        const current = await this.database.storages.findOne({ userId: account.userId });
-        const now = new Date();
+        const savedKeys = Object.keys(normalizedData);
 
-        if (!current) {
-            const entity: StorageEntity = {
-                userId: account.userId,
-                data: normalizedData,
-                createdAt: now,
-                updatedAt: now
-            };
-            await this.database.storages.insert(entity);
-        }
-        else {
-            await this.database.storages.update(
-                { userId: account.userId },
-                {
-                    $set: {
-                        data: {
-                            ...current.data,
-                            ...normalizedData
-                        },
-                        updatedAt: now
-                    }
+        for (let attempt = 0; attempt < 5; ++attempt) {
+            const current = await this.database.storages.findOne({ userId: account.userId });
+            const now = new Date();
+
+            if (!current) {
+                try {
+                    const entity: StorageEntity = {
+                        userId: account.userId,
+                        data: normalizedData,
+                        createdAt: now,
+                        updatedAt: now,
+                        version: 1
+                    };
+                    await this.database.storages.insert(entity);
+                    return savedKeys;
                 }
+                catch (error) {
+                    if (isUniqueConstraintError(error)) {
+                        continue;
+                    }
+
+                    throw error;
+                }
+            }
+
+            const mergedData = {
+                ...(current.data ?? {}),
+                ...normalizedData
+            };
+            const hasVersion = typeof current.version === 'number';
+            const result = await this.database.storages.update(
+                hasVersion
+                    ? { userId: account.userId, version: current.version }
+                    : { userId: account.userId, version: { $exists: false } },
+                hasVersion
+                    ? {
+                        $set: {
+                            data: mergedData,
+                            updatedAt: now
+                        },
+                        $inc: {
+                            version: 1
+                        }
+                    }
+                    : {
+                        $set: {
+                            data: mergedData,
+                            updatedAt: now,
+                            version: 1
+                        }
+                    }
             );
+
+            if (result.numAffected > 0) {
+                return savedKeys;
+            }
         }
 
-        return Object.keys(normalizedData);
+        throw new Error('Storage save conflict, please retry');
     }
 
-    async get(token: string, key: string) {
-        const account = await this.accounts.requireAccount(token);
+    async get(token: string, key: string, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         const normalizedKey = key.trim();
         if (!normalizedKey) {
             throw new Error('Storage key is required');
@@ -73,4 +106,8 @@ function normalizeSaveInput(save: Record<string, string>) {
     });
 
     return Object.fromEntries(normalizedEntries);
+}
+
+function isUniqueConstraintError(error: unknown) {
+    return error instanceof Error && /unique constraint/i.test(error.message);
 }

@@ -27,9 +27,23 @@ export class NeDbCollection<T extends Record<string, any>> {
         });
     }
 
-    async ensureIndex(fieldName: keyof T | string, unique = false) {
+    async ensureIndex(
+        fieldName: keyof T | string,
+        options: boolean | {
+            unique?: boolean
+            expireAfterSeconds?: number
+        } = false
+    ) {
+        const indexOptions = typeof options === 'boolean'
+            ? { unique: options }
+            : options;
+
         await new Promise<void>((resolve, reject) => {
-            this.datastore.ensureIndex({ fieldName, unique }, err => {
+            this.datastore.ensureIndex({
+                fieldName,
+                unique: indexOptions.unique,
+                expireAfterSeconds: indexOptions.expireAfterSeconds
+            }, err => {
                 if (err) {
                     reject(err);
                     return;

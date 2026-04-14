@@ -15,4 +15,14 @@ export interface StorageEntity {
     data: Record<string, string>
     createdAt: Date
     updatedAt: Date
+    version?: number
+}
+
+export interface SessionEntity {
+    _id?: string
+    tokenHash: string
+    userId: string
+    createdAt: Date
+    lastSeenAt: Date
+    expiresAt: Date
 }

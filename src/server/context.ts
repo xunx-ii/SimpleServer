@@ -14,13 +14,14 @@ export interface AppContext {
     rooms: RoomService
 }
 
-let currentAppContext: AppContext | undefined;
+const appContexts = new WeakMap<object, AppContext>();
 
 export async function createAppContext(
     server: WsServer<ServiceType>,
     options: {
         dataDir?: string
         inMemoryDb?: boolean
+        sessionTtlMs?: number
     } = {}
 ): Promise<AppContext> {
     const database = await createDatabase({
@@ -28,7 +29,9 @@ export async function createAppContext(
         inMemoryOnly: options.inMemoryDb
     });
     const connections = new ConnectionRegistry(server);
-    const accounts = new AccountService(database, connections);
+    const accounts = new AccountService(database, connections, {
+        sessionTtlMs: options.sessionTtlMs
+    });
     const storage = new StorageService(database, accounts);
     const rooms = new RoomService(server, accounts, connections);
 
@@ -41,14 +44,19 @@ export async function createAppContext(
     };
 }
 
-export function setAppContext(appContext: AppContext | undefined) {
-    currentAppContext = appContext;
+export function setAppContext(server: object, appContext: AppContext) {
+    appContexts.set(server, appContext);
 }
 
-export function getAppContext() {
-    if (!currentAppContext) {
+export function clearAppContext(server: object) {
+    appContexts.delete(server);
+}
+
+export function getAppContext(server: object) {
+    const appContext = appContexts.get(server);
+    if (!appContext) {
         throw new Error('Application context is not initialized');
     }
 
-    return currentAppContext;
+    return appContext;
 }

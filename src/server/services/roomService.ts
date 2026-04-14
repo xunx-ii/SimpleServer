@@ -51,8 +51,8 @@ export class RoomService {
         this.userIdToRoomId.clear();
     }
 
-    async createRoom(token: string, input: { name: string, maxPlayers: number }) {
-        const account = await this.accounts.requireAccount(token);
+    async createRoom(token: string, input: { name: string, maxPlayers: number }, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         this.ensureUserNotInRoom(account.userId);
 
         const now = new Date();
@@ -86,8 +86,8 @@ export class RoomService {
         return this.toRoomInfo(room);
     }
 
-    async joinRoom(token: string, roomId: string) {
-        const account = await this.accounts.requireAccount(token);
+    async joinRoom(token: string, roomId: string, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         const currentRoomId = this.userIdToRoomId.get(account.userId);
         if (currentRoomId && currentRoomId !== roomId) {
             throw new Error('User already joined another room');
@@ -127,8 +127,8 @@ export class RoomService {
         return this.toRoomInfo(room);
     }
 
-    async leaveRoom(token: string, roomId?: string) {
-        const account = await this.accounts.requireAccount(token);
+    async leaveRoom(token: string, roomId?: string, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         return this.leaveRoomByUserId(account.userId, roomId);
     }
 
@@ -157,8 +157,8 @@ export class RoomService {
         return Promise.all(rooms.map(room => this.toRoomInfo(room)));
     }
 
-    async getMyRoom(token: string) {
-        const account = await this.accounts.requireAccount(token);
+    async getMyRoom(token: string, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         const roomId = this.userIdToRoomId.get(account.userId);
         if (!roomId) {
             return null;
@@ -167,8 +167,8 @@ export class RoomService {
         return this.toRoomInfo(this.requireRoom(roomId));
     }
 
-    async setReady(token: string, isReady: boolean) {
-        const account = await this.accounts.requireAccount(token);
+    async setReady(token: string, isReady: boolean, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         const room = this.requireRoomByUserId(account.userId);
         if (room.state === 'playing') {
             throw new Error('Game already started');
@@ -199,8 +199,8 @@ export class RoomService {
         payload: string
         kind?: string
         targetUserId?: string
-    }) {
-        const account = await this.accounts.requireAccount(token);
+    }, connId?: string) {
+        const account = await this.accounts.requireAccount(token, connId);
         const room = this.requireRoomByUserId(account.userId);
         const targetUserId = input.targetUserId?.trim() || undefined;
         const deliveredUserIds = targetUserId
