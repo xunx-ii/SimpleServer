@@ -1,0 +1,26 @@
+{
+  "name": "SimpleServer-.",
+  "version": "0.1.0",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "dev": "tsrpc-cli dev",
+    "build": "tsrpc-cli build",
+    "doc": "tsrpc-cli doc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "proto": "tsrpc-cli proto",
+    "sync": "tsrpc-cli sync",
+    "api": "tsrpc-cli api"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "ts-node": "^10.9.2",
+    "tsrpc-cli": "^2.4.5",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "tsrpc": "^3.4.21"
+  }
+}
