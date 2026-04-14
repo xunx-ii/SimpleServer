@@ -25,8 +25,12 @@ export async function createGameServer(options: {
     });
     setAppContext(appContext);
 
-    server.flows.postDisconnectFlow.push(flowData => {
-        appContext.connections.unbind(flowData.conn.id);
+    server.flows.postDisconnectFlow.push(async flowData => {
+        const userId = appContext.connections.unbind(flowData.conn.id);
+        if (userId && !appContext.connections.isUserOnline(userId)) {
+            await appContext.rooms.handleUserOffline(userId);
+        }
+
         return flowData;
     });
 
@@ -50,6 +54,7 @@ export async function createGameServer(options: {
                 started = false;
             }
 
+            appContext.rooms.dispose();
             appContext.connections.clear();
             setAppContext(undefined);
         }

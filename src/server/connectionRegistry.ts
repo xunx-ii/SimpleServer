@@ -24,19 +24,25 @@ export class ConnectionRegistry {
     unbind(connId: string) {
         const userId = this.connIdToUserId.get(connId);
         if (!userId) {
-            return;
+            return undefined;
         }
 
         this.connIdToUserId.delete(connId);
         const connIds = this.userIdToConnIds.get(userId);
         if (!connIds) {
-            return;
+            return userId;
         }
 
         connIds.delete(connId);
         if (connIds.size === 0) {
             this.userIdToConnIds.delete(userId);
         }
+
+        return userId;
+    }
+
+    getUserId(connId: string) {
+        return this.connIdToUserId.get(connId);
     }
 
     isUserOnline(userId: string) {
@@ -47,6 +53,20 @@ export class ConnectionRegistry {
 
         return this.server.connections.some(conn => {
             return connIds.has(conn.id) && conn.status === ConnectionStatus.Opened;
+        });
+    }
+
+    getConnectionsByUserIds(userIds: Iterable<string>) {
+        const userIdSet = new Set(userIds);
+        if (!userIdSet.size) {
+            return [];
+        }
+
+        return this.server.connections.filter(conn => {
+            const userId = this.connIdToUserId.get(conn.id);
+            return !!userId
+                && userIdSet.has(userId)
+                && conn.status === ConnectionStatus.Opened;
         });
     }
 

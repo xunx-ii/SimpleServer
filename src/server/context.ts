@@ -27,7 +27,7 @@ export async function createAppContext(
     });
     const connections = new ConnectionRegistry(server);
     const accounts = new AccountService(database, connections);
-    const rooms = new RoomService(database, accounts, connections);
+    const rooms = new RoomService(server, accounts, connections);
 
     return {
         database,

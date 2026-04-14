@@ -2,12 +2,16 @@ import { ServiceProto } from 'tsrpc-proto';
 import { ReqLogin, ResLogin } from './Account/PtlLogin';
 import { ReqProfile, ResProfile } from './Account/PtlProfile';
 import { ReqRegister, ResRegister } from './Account/PtlRegister';
+import { MsgEvent } from './Room/MsgEvent';
+import { MsgSync } from './Room/MsgSync';
 import { ReqCreate, ResCreate } from './Room/PtlCreate';
 import { ReqGet, ResGet } from './Room/PtlGet';
 import { ReqJoin, ResJoin } from './Room/PtlJoin';
 import { ReqLeave, ResLeave } from './Room/PtlLeave';
 import { ReqList, ResList } from './Room/PtlList';
 import { ReqMy, ResMy } from './Room/PtlMy';
+import { ReqSetReady, ResSetReady } from './Room/PtlSetReady';
+import { ReqSync, ResSync } from './Room/PtlSync';
 
 export interface ServiceType {
     api: {
@@ -46,15 +50,24 @@ export interface ServiceType {
         "Room/My": {
             req: ReqMy,
             res: ResMy
+        },
+        "Room/SetReady": {
+            req: ReqSetReady,
+            res: ResSetReady
+        },
+        "Room/Sync": {
+            req: ReqSync,
+            res: ResSync
         }
     },
     msg: {
-
+        "Room/Event": MsgEvent,
+        "Room/Sync": MsgSync
     }
 }
 
 export const serviceProto: ServiceProto<ServiceType> = {
-    "version": 1,
+    "version": 2,
     "services": [
         {
             "id": 2,
@@ -70,6 +83,16 @@ export const serviceProto: ServiceProto<ServiceType> = {
             "id": 4,
             "name": "Account/Register",
             "type": "api"
+        },
+        {
+            "id": 11,
+            "name": "Room/Event",
+            "type": "msg"
+        },
+        {
+            "id": 12,
+            "name": "Room/Sync",
+            "type": "msg"
         },
         {
             "id": 5,
@@ -99,6 +122,16 @@ export const serviceProto: ServiceProto<ServiceType> = {
         {
             "id": 10,
             "name": "Room/My",
+            "type": "api"
+        },
+        {
+            "id": 13,
+            "name": "Room/SetReady",
+            "type": "api"
+        },
+        {
+            "id": 14,
+            "name": "Room/Sync",
             "type": "api"
         }
     ],
@@ -329,52 +362,145 @@ export const serviceProto: ServiceProto<ServiceType> = {
                 }
             ]
         },
-        "Room/PtlCreate/ReqCreate": {
+        "Room/MsgEvent/MsgEvent": {
             "type": "Interface",
             "extends": [
                 {
                     "id": 0,
                     "type": {
                         "type": "Reference",
-                        "target": "base/AuthenticatedRequest"
+                        "target": "../models/GameModels/RoomEvent"
                     }
                 }
-            ],
+            ]
+        },
+        "../models/GameModels/RoomEvent": {
+            "type": "Interface",
             "properties": [
                 {
                     "id": 0,
-                    "name": "name",
+                    "name": "type",
+                    "type": {
+                        "type": "Union",
+                        "members": [
+                            {
+                                "id": 0,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "room_created"
+                                }
+                            },
+                            {
+                                "id": 1,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "player_joined"
+                                }
+                            },
+                            {
+                                "id": 2,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "player_left"
+                                }
+                            },
+                            {
+                                "id": 3,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "player_count_changed"
+                                }
+                            },
+                            {
+                                "id": 4,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "player_ready_changed"
+                                }
+                            },
+                            {
+                                "id": 5,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "countdown_started"
+                                }
+                            },
+                            {
+                                "id": 6,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "countdown_tick"
+                                }
+                            },
+                            {
+                                "id": 7,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "countdown_canceled"
+                                }
+                            },
+                            {
+                                "id": 8,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "game_started"
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": 1,
+                    "name": "roomId",
                     "type": {
                         "type": "String"
                     }
                 },
                 {
-                    "id": 1,
-                    "name": "maxPlayers",
-                    "type": {
-                        "type": "Number"
-                    }
-                }
-            ]
-        },
-        "Room/PtlCreate/ResCreate": {
-            "type": "Interface",
-            "extends": [
-                {
-                    "id": 0,
-                    "type": {
-                        "type": "Reference",
-                        "target": "base/BaseResponse"
-                    }
-                }
-            ],
-            "properties": [
-                {
-                    "id": 0,
+                    "id": 2,
                     "name": "room",
                     "type": {
                         "type": "Reference",
                         "target": "../models/GameModels/RoomInfo"
+                    }
+                },
+                {
+                    "id": 3,
+                    "name": "actorUserId",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 4,
+                    "name": "targetUserId",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 5,
+                    "name": "countdownSeconds",
+                    "type": {
+                        "type": "Number"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 6,
+                    "name": "message",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 7,
+                    "name": "sentAt",
+                    "type": {
+                        "type": "Date"
                     }
                 }
             ]
@@ -411,6 +537,36 @@ export const serviceProto: ServiceProto<ServiceType> = {
                     }
                 },
                 {
+                    "id": 8,
+                    "name": "state",
+                    "type": {
+                        "type": "Union",
+                        "members": [
+                            {
+                                "id": 0,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "open"
+                                }
+                            },
+                            {
+                                "id": 1,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "countdown"
+                                }
+                            },
+                            {
+                                "id": 2,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "playing"
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
                     "id": 4,
                     "name": "playerCount",
                     "type": {
@@ -426,6 +582,50 @@ export const serviceProto: ServiceProto<ServiceType> = {
                             "type": "Reference",
                             "target": "../models/GameModels/RoomPlayer"
                         }
+                    }
+                },
+                {
+                    "id": 9,
+                    "name": "countdownEndAt",
+                    "type": {
+                        "type": "Union",
+                        "members": [
+                            {
+                                "id": 0,
+                                "type": {
+                                    "type": "Date"
+                                }
+                            },
+                            {
+                                "id": 1,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": null
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": 10,
+                    "name": "startedAt",
+                    "type": {
+                        "type": "Union",
+                        "members": [
+                            {
+                                "id": 0,
+                                "type": {
+                                    "type": "Date"
+                                }
+                            },
+                            {
+                                "id": 1,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": null
+                                }
+                            }
+                        ]
                     }
                 },
                 {
@@ -473,6 +673,152 @@ export const serviceProto: ServiceProto<ServiceType> = {
                     "name": "isOnline",
                     "type": {
                         "type": "Boolean"
+                    }
+                },
+                {
+                    "id": 4,
+                    "name": "isReady",
+                    "type": {
+                        "type": "Boolean"
+                    }
+                }
+            ]
+        },
+        "Room/MsgSync/MsgSync": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "../models/GameModels/RoomSyncMessage"
+                    }
+                }
+            ]
+        },
+        "../models/GameModels/RoomSyncMessage": {
+            "type": "Interface",
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "roomId",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 1,
+                    "name": "fromUserId",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 2,
+                    "name": "fromUsername",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 3,
+                    "name": "fromDisplayName",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 4,
+                    "name": "toUserId",
+                    "type": {
+                        "type": "Union",
+                        "members": [
+                            {
+                                "id": 0,
+                                "type": {
+                                    "type": "String"
+                                }
+                            },
+                            {
+                                "id": 1,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": null
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": 5,
+                    "name": "kind",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 6,
+                    "name": "payload",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 7,
+                    "name": "sentAt",
+                    "type": {
+                        "type": "Date"
+                    }
+                }
+            ]
+        },
+        "Room/PtlCreate/ReqCreate": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/AuthenticatedRequest"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "name",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 1,
+                    "name": "maxPlayers",
+                    "type": {
+                        "type": "Number"
+                    }
+                }
+            ]
+        },
+        "Room/PtlCreate/ResCreate": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/BaseResponse"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "room",
+                    "type": {
+                        "type": "Reference",
+                        "target": "../models/GameModels/RoomInfo"
                     }
                 }
             ]
@@ -726,6 +1072,117 @@ export const serviceProto: ServiceProto<ServiceType> = {
                                 }
                             }
                         ]
+                    }
+                }
+            ]
+        },
+        "Room/PtlSetReady/ReqSetReady": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/AuthenticatedRequest"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "isReady",
+                    "type": {
+                        "type": "Boolean"
+                    }
+                }
+            ]
+        },
+        "Room/PtlSetReady/ResSetReady": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/BaseResponse"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "room",
+                    "type": {
+                        "type": "Reference",
+                        "target": "../models/GameModels/RoomInfo"
+                    }
+                }
+            ]
+        },
+        "Room/PtlSync/ReqSync": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/AuthenticatedRequest"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "payload",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 1,
+                    "name": "kind",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 2,
+                    "name": "targetUserId",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                }
+            ]
+        },
+        "Room/PtlSync/ResSync": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/BaseResponse"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "roomId",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 1,
+                    "name": "deliveredUserIds",
+                    "type": {
+                        "type": "Array",
+                        "elementType": {
+                            "type": "String"
+                        }
                     }
                 }
             ]
