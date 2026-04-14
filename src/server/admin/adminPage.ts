@@ -143,6 +143,7 @@ export function renderAdminPage() {
     document.getElementById('loginForm').addEventListener('submit', onLogin);
     document.getElementById('refreshButton').addEventListener('click', function () { void loadDashboard(); });
     document.getElementById('logoutButton').addEventListener('click', onLogout);
+    dashboardView.addEventListener('click', onDashboardClick);
 
     void init();
 
@@ -182,6 +183,43 @@ export function renderAdminPage() {
         refreshTimer = null;
       }
       showLogin();
+    }
+
+    async function onDashboardClick(event) {
+      var target = event.target;
+      if (!target || typeof target.closest !== 'function') {
+        return;
+      }
+
+      var button = target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+
+      var action = button.dataset.action;
+      if (action === 'dismiss-room') {
+        await dismissRoom(button.dataset.roomId || '');
+        return;
+      }
+
+      if (action === 'kick-player') {
+        await kickPlayer(button.dataset.roomId || '', button.dataset.userId || '');
+        return;
+      }
+
+      if (action === 'edit-display-name') {
+        await editDisplayName(button.dataset.userId || '', button.dataset.displayName || '');
+        return;
+      }
+
+      if (action === 'save-storage') {
+        await saveStorage(button.dataset.userId || '');
+        return;
+      }
+
+      if (action === 'delete-storage-key') {
+        await deleteStorageKey(button.dataset.userId || '');
+      }
     }
 
     function showLogin() {
@@ -254,14 +292,14 @@ export function renderAdminPage() {
           return '<span class="pill ' + (player.isOnline ? '' : 'off') + '">' +
             esc(player.displayName) + ' · ' + esc(player.isReady ? 'Ready' : 'Idle') + ' · ' + esc(player.isOnline ? 'Online' : 'Offline') +
             '</span>' +
-            '<button class="danger" type="button" onclick="kickPlayer(' + JSON.stringify(room.roomId) + ',' + JSON.stringify(player.userId) + ')">Kick</button>';
+            '<button class="danger" type="button" data-action="kick-player" data-room-id="' + esc(room.roomId) + '" data-user-id="' + esc(player.userId) + '">Kick</button>';
         }).join('');
         return '<tr>' +
           '<td><div><strong>' + esc(room.name) + '</strong></div><div class="mono">' + esc(room.roomId) + '</div></td>' +
           '<td>' + esc(room.state) + '<br/>Owner: <span class="mono">' + esc(room.ownerUserId) + '</span></td>' +
           '<td><div class="stack">' + players + '</div></td>' +
           '<td>Created: ' + esc(fmtDate(room.createdAt)) + '<br/>Updated: ' + esc(fmtDate(room.updatedAt)) + '<br/>Countdown: ' + esc(room.countdownEndAt ? fmtDate(room.countdownEndAt) : '-') + '</td>' +
-          '<td><button class="danger" type="button" onclick="dismissRoom(' + JSON.stringify(room.roomId) + ')">Delete Room</button></td>' +
+          '<td><button class="danger" type="button" data-action="dismiss-room" data-room-id="' + esc(room.roomId) + '">Delete Room</button></td>' +
           '</tr>';
       }).join('');
       document.getElementById('roomsContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>Room</th><th>Status</th><th>Players</th><th>Timing</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -278,7 +316,7 @@ export function renderAdminPage() {
           '<td>' + esc(player.isOnline ? 'Online' : 'Offline') + '<br/>Sessions: ' + esc(String(player.sessionCount)) + '</td>' +
           '<td>' + esc(player.roomId || '-') + '</td>' +
           '<td>Keys: ' + esc(String(player.storageKeyCount)) + '<br/>Updated: ' + esc(player.storageUpdatedAt ? fmtDate(player.storageUpdatedAt) : '-') + '</td>' +
-          '<td><div class="stack"><button class="secondary" type="button" onclick="editDisplayName(' + JSON.stringify(player.userId) + ',' + JSON.stringify(player.displayName) + ')">Edit Name</button><button class="secondary" type="button" onclick="saveStorage(' + JSON.stringify(player.userId) + ')">Save Storage</button><button class="ghost" type="button" onclick="deleteStorageKey(' + JSON.stringify(player.userId) + ')">Delete Key</button></div></td>' +
+          '<td><div class="stack"><button class="secondary" type="button" data-action="edit-display-name" data-user-id="' + esc(player.userId) + '" data-display-name="' + esc(player.displayName) + '">Edit Name</button><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(player.userId) + '">Save Storage</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(player.userId) + '">Delete Key</button></div></td>' +
           '</tr>';
       }).join('');
       document.getElementById('playersContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>Player</th><th>Status</th><th>Room</th><th>Storage</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -294,7 +332,7 @@ export function renderAdminPage() {
           '<td><div><strong>' + esc(storage.displayName || storage.username || storage.userId) + '</strong></div><div class="mono">' + esc(storage.userId) + '</div></td>' +
           '<td>Keys: ' + esc(String(storage.keyCount)) + '<br/>Version: ' + esc(String(storage.version || 0)) + '<br/>Updated: ' + esc(fmtDate(storage.updatedAt)) + '</td>' +
           '<td><div class="code mono">' + esc(JSON.stringify(storage.data, null, 2)) + '</div></td>' +
-          '<td><div class="stack"><button class="secondary" type="button" onclick="saveStorage(' + JSON.stringify(storage.userId) + ')">Merge JSON</button><button class="ghost" type="button" onclick="deleteStorageKey(' + JSON.stringify(storage.userId) + ')">Delete Key</button></div></td>' +
+          '<td><div class="stack"><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(storage.userId) + '">Merge JSON</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(storage.userId) + '">Delete Key</button></div></td>' +
           '</tr>';
       }).join('');
       document.getElementById('storagesContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>User</th><th>Meta</th><th>Data</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -342,17 +380,27 @@ export function renderAdminPage() {
     }
 
     async function api(url, options) {
-      var init = options || {};
-      var headers = { 'Accept': 'application/json' };
-      if (init.body !== undefined) headers['Content-Type'] = 'application/json';
-      var response = await fetch(url, {
-        method: init.method || 'GET',
-        credentials: 'same-origin',
-        headers: headers,
-        body: init.body !== undefined ? JSON.stringify(init.body) : undefined
-      });
-      var payload = response.status === 204 ? null : await response.json().catch(function () { return {}; });
-      return { ok: response.ok, status: response.status, data: payload, error: payload && payload.error };
+      try {
+        var init = options || {};
+        var headers = { 'Accept': 'application/json' };
+        if (init.body !== undefined) headers['Content-Type'] = 'application/json';
+        var response = await fetch(url, {
+          method: init.method || 'GET',
+          credentials: 'same-origin',
+          headers: headers,
+          body: init.body !== undefined ? JSON.stringify(init.body) : undefined
+        });
+        var payload = response.status === 204 ? null : await response.json().catch(function () { return {}; });
+        return { ok: response.ok, status: response.status, data: payload, error: payload && payload.error };
+      }
+      catch (error) {
+        return {
+          ok: false,
+          status: 0,
+          data: null,
+          error: error instanceof Error ? error.message : 'Network request failed'
+        };
+      }
     }
 
     function setBanner(target, kind, message) {
