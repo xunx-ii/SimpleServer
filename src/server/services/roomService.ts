@@ -157,6 +157,10 @@ export class RoomService {
         return Promise.all(rooms.map(room => this.toRoomInfo(room)));
     }
 
+    async getAdminRooms() {
+        return this.listRooms();
+    }
+
     async getMyRoom(token: string, connId?: string) {
         const account = await this.accounts.requireAccount(token, connId);
         const roomId = this.userIdToRoomId.get(account.userId);
@@ -227,6 +231,40 @@ export class RoomService {
         return {
             roomId: room.roomId,
             deliveredUserIds
+        };
+    }
+
+    getUserRoomId(userId: string) {
+        return this.userIdToRoomId.get(userId);
+    }
+
+    getRoomMemberships() {
+        return new Map(this.userIdToRoomId);
+    }
+
+    async kickUser(roomId: string, userId: string) {
+        const normalizedUserId = userId.trim();
+        if (!normalizedUserId) {
+            throw new Error('User id is required');
+        }
+
+        return this.leaveRoomByUserId(normalizedUserId, roomId);
+    }
+
+    async dismissRoom(roomId: string) {
+        const room = this.requireRoom(roomId);
+        this.clearCountdown(room);
+
+        const removedUserIds = room.members.map(member => member.userId);
+        for (const removedUserId of removedUserIds) {
+            this.userIdToRoomId.delete(removedUserId);
+        }
+
+        this.rooms.delete(room.roomId);
+
+        return {
+            roomId: room.roomId,
+            removedUserIds
         };
     }
 

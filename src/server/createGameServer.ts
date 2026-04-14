@@ -1,10 +1,13 @@
 import * as path from 'path';
 import { WsServer } from 'tsrpc';
 import { serviceProto, ServiceType } from '../shared/protocols/serviceProto';
+import { createAdminServer } from './admin/createAdminServer';
+import { AdminServerConfig } from './config';
 import { clearAppContext, createAppContext, setAppContext } from './context';
 
 export interface GameServerInstance {
     server: WsServer<ServiceType>
+    adminUrl?: string
     start: () => Promise<void>
     stop: () => Promise<void>
 }
@@ -14,9 +17,11 @@ export async function createGameServer(options: {
     dataDir?: string
     inMemoryDb?: boolean
     sessionTtlMs?: number
+    admin?: AdminServerConfig
 } = {}): Promise<GameServerInstance> {
+    const wsPort = options.port ?? Number(process.env.PORT ?? 23414);
     const server = new WsServer(serviceProto, {
-        port: options.port ?? Number(process.env.PORT ?? 23414),
+        port: wsPort,
         json: true
     });
 
@@ -26,6 +31,12 @@ export async function createGameServer(options: {
         sessionTtlMs: options.sessionTtlMs
     });
     setAppContext(server, appContext);
+
+    const adminServer = !options.admin || options.admin.enabled === false
+        ? undefined
+        : createAdminServer(appContext, options.admin, {
+            wsPort
+        });
 
     server.flows.postDisconnectFlow.push(async flowData => {
         const userId = appContext.connections.unbind(flowData.conn.id);
@@ -42,16 +53,23 @@ export async function createGameServer(options: {
 
     return {
         server,
+        adminUrl: adminServer?.url,
         start: async () => {
             if (started) {
                 return;
             }
 
             await server.start();
+            if (adminServer) {
+                await adminServer.start();
+            }
             started = true;
         },
         stop: async () => {
             if (started) {
+                if (adminServer) {
+                    await adminServer.stop();
+                }
                 await server.stop();
                 started = false;
             }

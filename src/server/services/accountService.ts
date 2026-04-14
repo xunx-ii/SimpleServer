@@ -130,6 +130,71 @@ export class AccountService {
         return profiles;
     }
 
+    async listUsers() {
+        const accounts = await this.database.accounts.findMany({});
+        return accounts
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+            .map(account => this.toUserProfile(account));
+    }
+
+    async getUser(userId: string) {
+        const account = await this.database.accounts.findOne({
+            userId: normalizeUserId(userId)
+        });
+
+        return account ? this.toUserProfile(account) : null;
+    }
+
+    async updateDisplayName(userId: string, displayName: string) {
+        const normalizedUserId = normalizeUserId(userId);
+        const account = await this.database.accounts.findOne({ userId: normalizedUserId });
+        if (!account) {
+            throw new Error('Account not found');
+        }
+
+        const normalizedDisplayName = normalizeDisplayName(displayName, account.username);
+        await this.database.accounts.update(
+            { userId: normalizedUserId },
+            {
+                $set: {
+                    displayName: normalizedDisplayName
+                }
+            }
+        );
+
+        return this.toUserProfile({
+            ...account,
+            displayName: normalizedDisplayName
+        });
+    }
+
+    async listActiveSessionCounts() {
+        const now = Date.now();
+        const sessions = await this.database.sessions.findMany({});
+        const counts = new Map<string, number>();
+
+        for (const session of sessions) {
+            if (session.expiresAt.getTime() <= now) {
+                continue;
+            }
+
+            counts.set(session.userId, (counts.get(session.userId) ?? 0) + 1);
+        }
+
+        return counts;
+    }
+
+    async countActiveSessions() {
+        const sessionCounts = await this.listActiveSessionCounts();
+        let total = 0;
+
+        for (const count of sessionCounts.values()) {
+            total += count;
+        }
+
+        return total;
+    }
+
     private async createSession(account: AccountEntity, connId?: string): Promise<AuthSession> {
         const token = randomUUID();
         const now = new Date();
@@ -217,6 +282,15 @@ function validatePassword(password: string) {
     if (password.length < 6 || password.length > 64) {
         throw new Error('Password must be 6-64 characters');
     }
+}
+
+function normalizeUserId(userId: string) {
+    const normalized = userId.trim();
+    if (!normalized) {
+        throw new Error('User id is required');
+    }
+
+    return normalized;
 }
 
 async function hashPassword(password: string, salt: string) {

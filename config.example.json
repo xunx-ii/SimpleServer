@@ -1,0 +1,16 @@
+{
+  "server": {
+    "port": 23414,
+    "dataDir": ".data",
+    "inMemoryDb": false,
+    "sessionTtlMs": 2592000000
+  },
+  "admin": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 23514,
+    "username": "admin",
+    "password": "change-me",
+    "sessionTtlMs": 43200000
+  }
+}

@@ -70,6 +70,19 @@ export class ConnectionRegistry {
         });
     }
 
+    getOnlineUserIds() {
+        return Array.from(this.userIdToConnIds.keys())
+            .filter(userId => this.isUserOnline(userId));
+    }
+
+    getBoundConnectionCount() {
+        return this.connIdToUserId.size;
+    }
+
+    getOpenedConnectionCount() {
+        return this.server.connections.filter(conn => conn.status === ConnectionStatus.Opened).length;
+    }
+
     clear() {
         this.connIdToUserId.clear();
         this.userIdToConnIds.clear();
