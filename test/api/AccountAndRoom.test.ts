@@ -136,6 +136,78 @@ describe.sequential('AccountAndRoom', () => {
         assert.notStrictEqual(carolUserId, '');
     });
 
+    it('stores user data in isolated per-account storage', async () => {
+        const saveAlice = await aliceClient.callApi('Storage/Save', {
+            token: aliceToken,
+            save: {
+                key1: 'value1',
+                key2: 'value2'
+            }
+        });
+        assert.ok(saveAlice.isSucc);
+        if (!saveAlice.isSucc) {
+            return;
+        }
+
+        assert.deepStrictEqual(new Set(saveAlice.res.savedKeys), new Set(['key1', 'key2']));
+
+        const getAliceKey1 = await aliceClient.callApi('Storage/Get', {
+            token: aliceToken,
+            key: 'key1'
+        });
+        assert.ok(getAliceKey1.isSucc);
+        if (!getAliceKey1.isSucc) {
+            return;
+        }
+
+        assert.strictEqual(getAliceKey1.res.value, 'value1');
+
+        const getBobKey1 = await bobClient.callApi('Storage/Get', {
+            token: bobToken,
+            key: 'key1'
+        });
+        assert.ok(getBobKey1.isSucc);
+        if (!getBobKey1.isSucc) {
+            return;
+        }
+
+        assert.strictEqual(getBobKey1.res.value, null);
+
+        const saveAliceAgain = await aliceClient.callApi('Storage/Save', {
+            token: aliceToken,
+            save: {
+                key1: 'value1-updated',
+                key3: 'value3'
+            }
+        });
+        assert.ok(saveAliceAgain.isSucc);
+        if (!saveAliceAgain.isSucc) {
+            return;
+        }
+
+        const getAliceUpdated = await aliceClient.callApi('Storage/Get', {
+            token: aliceToken,
+            key: 'key1'
+        });
+        assert.ok(getAliceUpdated.isSucc);
+        if (!getAliceUpdated.isSucc) {
+            return;
+        }
+
+        assert.strictEqual(getAliceUpdated.res.value, 'value1-updated');
+
+        const getAliceKey2 = await aliceClient.callApi('Storage/Get', {
+            token: aliceToken,
+            key: 'key2'
+        });
+        assert.ok(getAliceKey2.isSucc);
+        if (!getAliceKey2.isSucc) {
+            return;
+        }
+
+        assert.strictEqual(getAliceKey2.res.value, 'value2');
+    });
+
     it('creates temporary rooms and emits join related events', async () => {
         const listBeforeCreate = await carolClient.callApi('Room/List', {});
         assert.ok(listBeforeCreate.isSucc);

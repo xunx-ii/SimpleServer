@@ -12,6 +12,8 @@ import { ReqList, ResList } from './Room/PtlList';
 import { ReqMy, ResMy } from './Room/PtlMy';
 import { ReqSetReady, ResSetReady } from './Room/PtlSetReady';
 import { ReqSync, ResSync } from './Room/PtlSync';
+import { ReqGet as ReqGet_1, ResGet as ResGet_1 } from './Storage/PtlGet';
+import { ReqSave, ResSave } from './Storage/PtlSave';
 
 export interface ServiceType {
     api: {
@@ -58,6 +60,14 @@ export interface ServiceType {
         "Room/Sync": {
             req: ReqSync,
             res: ResSync
+        },
+        "Storage/Get": {
+            req: ReqGet_1,
+            res: ResGet_1
+        },
+        "Storage/Save": {
+            req: ReqSave,
+            res: ResSave
         }
     },
     msg: {
@@ -67,7 +77,7 @@ export interface ServiceType {
 }
 
 export const serviceProto: ServiceProto<ServiceType> = {
-    "version": 2,
+    "version": 3,
     "services": [
         {
             "id": 2,
@@ -132,6 +142,16 @@ export const serviceProto: ServiceProto<ServiceType> = {
         {
             "id": 14,
             "name": "Room/Sync",
+            "type": "api"
+        },
+        {
+            "id": 15,
+            "name": "Storage/Get",
+            "type": "api"
+        },
+        {
+            "id": 16,
+            "name": "Storage/Save",
             "type": "api"
         }
     ],
@@ -1178,6 +1198,118 @@ export const serviceProto: ServiceProto<ServiceType> = {
                 {
                     "id": 1,
                     "name": "deliveredUserIds",
+                    "type": {
+                        "type": "Array",
+                        "elementType": {
+                            "type": "String"
+                        }
+                    }
+                }
+            ]
+        },
+        "Storage/PtlGet/ReqGet": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/AuthenticatedRequest"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "key",
+                    "type": {
+                        "type": "String"
+                    }
+                }
+            ]
+        },
+        "Storage/PtlGet/ResGet": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/BaseResponse"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "value",
+                    "type": {
+                        "type": "Union",
+                        "members": [
+                            {
+                                "id": 0,
+                                "type": {
+                                    "type": "String"
+                                }
+                            },
+                            {
+                                "id": 1,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": null
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "Storage/PtlSave/ReqSave": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/AuthenticatedRequest"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "save",
+                    "type": {
+                        "type": "Reference",
+                        "target": "../models/GameModels/UserStorageData"
+                    }
+                }
+            ]
+        },
+        "../models/GameModels/UserStorageData": {
+            "type": "Interface",
+            "indexSignature": {
+                "keyType": "String",
+                "type": {
+                    "type": "String"
+                }
+            }
+        },
+        "Storage/PtlSave/ResSave": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/BaseResponse"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "savedKeys",
                     "type": {
                         "type": "Array",
                         "elementType": {

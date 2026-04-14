@@ -1,10 +1,11 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { NeDbCollection } from './nedb';
-import { AccountEntity } from './models';
+import { AccountEntity, StorageEntity } from './models';
 
 export interface Database {
     accounts: NeDbCollection<AccountEntity>
+    storages: NeDbCollection<StorageEntity>
 }
 
 export async function createDatabase(options: {
@@ -22,15 +23,24 @@ export async function createDatabase(options: {
         filename: inMemoryOnly ? undefined : path.join(dataDir, 'accounts.db'),
         inMemoryOnly
     });
+    const storages = new NeDbCollection<StorageEntity>({
+        filename: inMemoryOnly ? undefined : path.join(dataDir, 'storages.db'),
+        inMemoryOnly
+    });
 
-    await accounts.init();
+    await Promise.all([
+        accounts.init(),
+        storages.init()
+    ]);
 
     await Promise.all([
         accounts.ensureIndex('userId', true),
-        accounts.ensureIndex('username', true)
+        accounts.ensureIndex('username', true),
+        storages.ensureIndex('userId', true)
     ]);
 
     return {
-        accounts
+        accounts,
+        storages
     };
 }

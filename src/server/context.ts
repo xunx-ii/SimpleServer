@@ -4,11 +4,13 @@ import { ConnectionRegistry } from './connectionRegistry';
 import { createDatabase, Database } from './database';
 import { AccountService } from './services/accountService';
 import { RoomService } from './services/roomService';
+import { StorageService } from './services/storageService';
 
 export interface AppContext {
     database: Database
     connections: ConnectionRegistry
     accounts: AccountService
+    storage: StorageService
     rooms: RoomService
 }
 
@@ -27,12 +29,14 @@ export async function createAppContext(
     });
     const connections = new ConnectionRegistry(server);
     const accounts = new AccountService(database, connections);
+    const storage = new StorageService(database, accounts);
     const rooms = new RoomService(server, accounts, connections);
 
     return {
         database,
         connections,
         accounts,
+        storage,
         rooms
     };
 }

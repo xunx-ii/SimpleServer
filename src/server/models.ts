@@ -8,3 +8,11 @@ export interface AccountEntity {
     createdAt: Date
     lastLoginAt: Date | null
 }
+
+export interface StorageEntity {
+    _id?: string
+    userId: string
+    data: Record<string, string>
+    createdAt: Date
+    updatedAt: Date
+}

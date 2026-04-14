@@ -11,6 +11,10 @@ export interface AuthSession {
     user: UserProfile
 }
 
+export interface UserStorageData {
+    [key: string]: string
+}
+
 export interface RoomPlayer {
     userId: string
     username: string
