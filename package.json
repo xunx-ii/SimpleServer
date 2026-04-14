@@ -21,6 +21,7 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "nedb": "^1.8.0",
     "tsrpc": "^3.4.21"
   }
 }
