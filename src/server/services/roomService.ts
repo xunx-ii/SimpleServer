@@ -248,12 +248,22 @@ export class RoomService {
             throw new Error('User id is required');
         }
 
-        return this.leaveRoomByUserId(normalizedUserId, roomId);
+        return this.leaveRoomByUserId(normalizedUserId, roomId, {
+            mode: 'kick'
+        });
     }
 
     async dismissRoom(roomId: string) {
         const room = this.requireRoom(roomId);
         this.clearCountdown(room);
+
+        await this.emitEventToUsers(
+            room.members.map(member => member.userId),
+            room,
+            {
+                type: 'room_dismissed'
+            }
+        );
 
         const removedUserIds = room.members.map(member => member.userId);
         for (const removedUserId of removedUserIds) {
@@ -297,7 +307,13 @@ export class RoomService {
         }
     }
 
-    private async leaveRoomByUserId(userId: string, roomId?: string) {
+    private async leaveRoomByUserId(
+        userId: string,
+        roomId?: string,
+        options: {
+            mode?: 'leave' | 'kick'
+        } = {}
+    ) {
         const room = roomId
             ? this.requireRoom(roomId)
             : this.requireRoomByUserId(userId);
@@ -312,6 +328,12 @@ export class RoomService {
 
         if (room.members.length === 0) {
             this.clearCountdown(room);
+            if (options.mode === 'kick') {
+                await this.emitEventToUsers([userId], room, {
+                    type: 'player_kicked',
+                    targetUserId: userId
+                });
+            }
             this.rooms.delete(room.roomId);
             return {
                 room: null,
@@ -323,10 +345,23 @@ export class RoomService {
             room.ownerUserId = room.members[0].userId;
         }
 
-        await this.emitEventToRoom(room, {
-            type: 'player_left',
-            actorUserId: userId
-        });
+        if (options.mode === 'kick') {
+            await this.emitEventToUsers(
+                [...room.members.map(member => member.userId), userId],
+                room,
+                {
+                    type: 'player_kicked',
+                    targetUserId: userId
+                }
+            );
+        }
+        else {
+            await this.emitEventToRoom(room, {
+                type: 'player_left',
+                actorUserId: userId
+            });
+        }
+
         await this.emitEventToRoom(room, {
             type: 'player_count_changed',
             actorUserId: userId

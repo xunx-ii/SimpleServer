@@ -60,8 +60,14 @@ export async function createGameServer(options: {
             }
 
             await server.start();
-            if (adminServer) {
-                await adminServer.start();
+            try {
+                if (adminServer) {
+                    await adminServer.start();
+                }
+            }
+            catch (error) {
+                await server.stop();
+                throw error;
             }
             started = true;
         },

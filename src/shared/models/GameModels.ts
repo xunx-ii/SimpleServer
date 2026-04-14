@@ -53,11 +53,13 @@ export interface RoomEvent {
         | 'room_created'
         | 'player_joined'
         | 'player_left'
+        | 'player_kicked'
         | 'player_count_changed'
         | 'player_ready_changed'
         | 'countdown_started'
         | 'countdown_tick'
         | 'countdown_canceled'
+        | 'room_dismissed'
         | 'game_started'
     roomId: string
     room: RoomInfo

@@ -77,7 +77,7 @@ export interface ServiceType {
 }
 
 export const serviceProto: ServiceProto<ServiceType> = {
-    "version": 3,
+    "version": 4,
     "services": [
         {
             "id": 2,
@@ -425,6 +425,13 @@ export const serviceProto: ServiceProto<ServiceType> = {
                                 }
                             },
                             {
+                                "id": 9,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "player_kicked"
+                                }
+                            },
+                            {
                                 "id": 3,
                                 "type": {
                                     "type": "Literal",
@@ -457,6 +464,13 @@ export const serviceProto: ServiceProto<ServiceType> = {
                                 "type": {
                                     "type": "Literal",
                                     "literal": "countdown_canceled"
+                                }
+                            },
+                            {
+                                "id": 10,
+                                "type": {
+                                    "type": "Literal",
+                                    "literal": "room_dismissed"
                                 }
                             },
                             {

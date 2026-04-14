@@ -37,11 +37,14 @@ export class StorageService {
     }
 
     async adminSave(userId: string, save: Record<string, string>) {
-        return this.saveByUserId(normalizeUserId(userId), save);
+        const normalizedUserId = normalizeUserId(userId);
+        await this.requireExistingUser(normalizedUserId);
+        return this.saveByUserId(normalizedUserId, save);
     }
 
     async deleteKeys(userId: string, keys: string[]) {
         const normalizedUserId = normalizeUserId(userId);
+        await this.requireExistingUser(normalizedUserId);
         const normalizedKeys = normalizeKeys(keys);
 
         if (!normalizedKeys.length) {
@@ -166,6 +169,13 @@ export class StorageService {
         }
 
         throw new Error('Storage save conflict, please retry');
+    }
+
+    private async requireExistingUser(userId: string) {
+        const user = await this.accounts.getUser(userId);
+        if (!user) {
+            throw new Error('Account not found');
+        }
     }
 }
 

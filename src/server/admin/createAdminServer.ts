@@ -161,7 +161,7 @@ export function createAdminServer(
             sendJson(res, 404, { error: 'Not found' });
         }
         catch (error) {
-            sendJson(res, 500, {
+            sendJson(res, resolveErrorStatus(error), {
                 error: error instanceof Error ? error.message : 'Internal server error'
             });
         }
@@ -374,4 +374,29 @@ function normalizePath(pathname: string) {
     }
 
     return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+}
+
+function resolveErrorStatus(error: unknown) {
+    if (error instanceof SyntaxError) {
+        return 400;
+    }
+
+    if (!(error instanceof Error)) {
+        return 500;
+    }
+
+    const message = error.message.toLowerCase();
+    if (message.includes('not found')) {
+        return 404;
+    }
+
+    if (message.includes('already')
+        || message.includes('full')
+        || message.includes('conflict')
+        || message.includes('expired')
+        || message.includes('invalid')) {
+        return 409;
+    }
+
+    return 400;
 }
