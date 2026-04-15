@@ -5,6 +5,7 @@ import { serviceProto } from '../../src/shared/protocols/serviceProto';
 import { createDatabase } from '../../src/server/database';
 import { ConnectionRegistry } from '../../src/server/connectionRegistry';
 import { AccountService } from '../../src/server/services/accountService';
+import { RoomService } from '../../src/server/services/roomService';
 
 describe('PerformanceOptimization', () => {
     const disposableServers: WsServer[] = [];
@@ -157,5 +158,137 @@ describe('PerformanceOptimization', () => {
             (server.connections as any).some = originalSome;
             (server.connections as any).filter = originalFilter;
         }
+    });
+
+    it('batches account profile lookups when listing rooms for the dashboard', async () => {
+        const server = new WsServer(serviceProto, {
+            port: 0,
+            json: true,
+            logLevel: 'warn',
+            logMsg: false
+        });
+        const database = await createDatabase({
+            inMemoryOnly: true
+        });
+        const connections = new ConnectionRegistry(server);
+        const warmAccounts = new AccountService(database, connections, {
+            sessionTtlMs: 5000
+        });
+        const dashboardAccounts = new AccountService(database, connections, {
+            sessionTtlMs: 5000
+        });
+        const rooms = new RoomService(server, dashboardAccounts, connections);
+        (server as any).broadcastMsg = async () => {
+            return {
+                isSucc: true
+            };
+        };
+
+        disposableServers.push(server);
+        disposableAccounts.push(warmAccounts, dashboardAccounts);
+        disposableConnections.push(connections);
+
+        const connIds = ['perf-room-1', 'perf-room-2', 'perf-room-3', 'perf-room-4'];
+        for (const connId of connIds) {
+            connections.registerConnection({
+                id: connId,
+                status: ConnectionStatus.Opened
+            } as any);
+        }
+
+        const alice = await warmAccounts.register({
+            username: 'dashboard_room_alice',
+            password: 'password123',
+            displayName: 'Alice'
+        });
+        const bob = await warmAccounts.register({
+            username: 'dashboard_room_bob',
+            password: 'password123',
+            displayName: 'Bob'
+        });
+        const charlie = await warmAccounts.register({
+            username: 'dashboard_room_charlie',
+            password: 'password123',
+            displayName: 'Charlie'
+        });
+        const diana = await warmAccounts.register({
+            username: 'dashboard_room_diana',
+            password: 'password123',
+            displayName: 'Diana'
+        });
+
+        const roomA = await rooms.createRoom(alice.token, {
+            name: 'Perf Room A',
+            maxPlayers: 4
+        }, connIds[0]);
+        await rooms.joinRoom(bob.token, roomA.roomId, connIds[1]);
+
+        const roomB = await rooms.createRoom(charlie.token, {
+            name: 'Perf Room B',
+            maxPlayers: 4
+        }, connIds[2]);
+        await rooms.joinRoom(diana.token, roomB.roomId, connIds[3]);
+
+        (dashboardAccounts as any).accountByUserId.clear();
+        (dashboardAccounts as any).profileByUserId.clear();
+        (dashboardAccounts as any).userIdByUsername.clear();
+
+        let accountFindManyCount = 0;
+        const originalAccountFindMany = database.accounts.findMany.bind(database.accounts);
+        database.accounts.findMany = async query => {
+            accountFindManyCount += 1;
+            return originalAccountFindMany(query);
+        };
+
+        const listedRooms = await rooms.listRooms();
+
+        assert.strictEqual(listedRooms.length, 2);
+        assert.strictEqual(accountFindManyCount, 1);
+    });
+
+    it('queries only non-expired sessions when aggregating active session counts', async () => {
+        const server = new WsServer(serviceProto, {
+            port: 0,
+            json: true
+        });
+        const database = await createDatabase({
+            inMemoryOnly: true
+        });
+        const connections = new ConnectionRegistry(server);
+        const accounts = new AccountService(database, connections, {
+            sessionTtlMs: 5000
+        });
+
+        disposableServers.push(server);
+        disposableAccounts.push(accounts);
+        disposableConnections.push(connections);
+
+        const session = await accounts.register({
+            username: 'active_session_perf_user',
+            password: 'password123',
+            displayName: 'Active Session Perf User'
+        });
+
+        await database.sessions.insert({
+            tokenHash: 'expired-session-token-hash',
+            userId: session.user.userId,
+            createdAt: new Date(0),
+            lastSeenAt: new Date(0),
+            expiresAt: new Date(Date.now() - 60_000)
+        });
+
+        let capturedQuery: Record<string, any> | undefined;
+        const originalSessionFindMany = database.sessions.findMany.bind(database.sessions);
+        database.sessions.findMany = async query => {
+            capturedQuery = query;
+            return originalSessionFindMany(query);
+        };
+
+        const counts = await accounts.listActiveSessionCounts();
+
+        assert.strictEqual(counts.get(session.user.userId), 1);
+        assert.ok(capturedQuery);
+        assert.ok(capturedQuery?.expiresAt);
+        assert.ok(capturedQuery?.expiresAt.$gt instanceof Date);
     });
 });

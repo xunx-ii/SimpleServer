@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { WsConnection, WsServer } from 'tsrpc';
 import { TransportDataUtil } from 'tsrpc-base-client';
-import { RoomEvent, RoomInfo, RoomPlayer, RoomSyncMessage } from '../../shared/models/GameModels';
+import { RoomEvent, RoomInfo, RoomPlayer, RoomSyncMessage, UserProfile } from '../../shared/models/GameModels';
 import { ServiceType } from '../../shared/protocols/serviceProto';
 import { ConnectionRegistry } from '../connectionRegistry';
 import { AccountService } from './accountService';
@@ -165,7 +165,7 @@ export class RoomService {
         const rooms = Array.from(this.rooms.values())
             .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-        return Promise.all(rooms.map(room => this.toRoomInfo(room)));
+        return this.toRoomInfos(rooms);
     }
 
     async getAdminRooms() {
@@ -577,8 +577,31 @@ export class RoomService {
         }
     }
 
+    private async toRoomInfos(rooms: RoomRuntime[]): Promise<RoomInfo[]> {
+        if (!rooms.length) {
+            return [];
+        }
+
+        const userIds = new Set<string>();
+        for (const room of rooms) {
+            for (const member of room.members) {
+                userIds.add(member.userId);
+            }
+        }
+
+        const profiles = await this.accounts.getProfiles(Array.from(userIds));
+        return rooms.map(room => this.toRoomInfoWithProfiles(room, profiles));
+    }
+
     private async toRoomInfo(room: RoomRuntime): Promise<RoomInfo> {
         const profiles = await this.accounts.getProfiles(room.members.map(member => member.userId));
+        return this.toRoomInfoWithProfiles(room, profiles);
+    }
+
+    private toRoomInfoWithProfiles(
+        room: RoomRuntime,
+        profiles: Map<string, UserProfile>
+    ): RoomInfo {
         const players: RoomPlayer[] = room.members.map(member => {
             const profile = profiles.get(member.userId);
 

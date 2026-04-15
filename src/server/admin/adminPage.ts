@@ -512,7 +512,6 @@ export function renderAdminPage() {
         '<button class="secondary" type="submit">搜索</button>' +
         '<button class="ghost" type="button" data-action="reset-list" data-list="' + esc(listKey) + '">清空</button>' +
         '</form>' +
-        '<div class="muted">筛选后 ' + esc(String(pager.filteredTotal || 0)) + ' / 总数 ' + esc(String(pager.total || 0)) + '</div>' +
         '</div>';
     }
 

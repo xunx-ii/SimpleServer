@@ -16,5 +16,6 @@ describe('AdminPageMarkup', () => {
         assert.ok(html.includes("dashboardView.addEventListener('submit', onDashboardSubmit);"));
         assert.ok(html.includes('name="pageSize"'));
         assert.ok(!html.includes('onclick='));
+        assert.ok(!html.includes('筛选后 '));
     });
 });

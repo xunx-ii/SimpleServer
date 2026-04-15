@@ -266,7 +266,11 @@ export class AccountService {
 
     async listActiveSessionCounts() {
         const now = Date.now();
-        const sessions = await this.database.sessions.findMany({});
+        const sessions = await this.database.sessions.findMany({
+            expiresAt: {
+                $gt: new Date(now)
+            }
+        });
         const counts = new Map<string, number>();
 
         for (const session of sessions) {
