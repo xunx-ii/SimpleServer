@@ -12,6 +12,9 @@ describe('AdminPageMarkup', () => {
         assert.ok(html.includes('data-action="edit-display-name"'));
         assert.ok(html.includes('data-action="save-storage"'));
         assert.ok(html.includes('data-action="delete-storage-key"'));
+        assert.ok(html.includes('data-action="change-page"'));
+        assert.ok(html.includes("dashboardView.addEventListener('submit', onDashboardSubmit);"));
+        assert.ok(html.includes('name="pageSize"'));
         assert.ok(!html.includes('onclick='));
     });
 });

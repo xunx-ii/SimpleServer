@@ -8,9 +8,23 @@ const DEFAULT_ADMIN_HOST = '127.0.0.1';
 const DEFAULT_ADMIN_PORT = 23514;
 const DEFAULT_ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_COOKIE = 'simple_server_admin_session';
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+const MAX_ADMIN_PAGE_SIZE = 200;
 
 type AdminSession = {
     expiresAt: number
+};
+
+type DashboardListQuery = {
+    search: string
+    page: number
+    pageSize: number
+};
+
+type DashboardPager = DashboardListQuery & {
+    total: number
+    filteredTotal: number
+    totalPages: number
 };
 
 export interface AdminServerInstance {
@@ -107,7 +121,7 @@ export function createAdminServer(
                     adminHost: host,
                     adminPort: port,
                     startedAt
-                }));
+                }, url.searchParams));
                 return;
             }
 
@@ -201,7 +215,8 @@ async function buildDashboardPayload(
         adminHost: string
         adminPort: number
         startedAt: Date
-    }
+    },
+    searchParams: URLSearchParams
 ) {
     const [rooms, users, storages, sessionCounts] = await Promise.all([
         appContext.rooms.getAdminRooms(),
@@ -214,6 +229,9 @@ async function buildDashboardPayload(
     const onlineUserIds = new Set(appContext.connections.getOnlineUserIds());
     const storageMap = new Map(storages.map(storage => [storage.userId, storage]));
     const userMap = new Map(users.map(user => [user.userId, user]));
+    const roomQuery = parseDashboardListQuery(searchParams, 'room');
+    const playerQuery = parseDashboardListQuery(searchParams, 'player');
+    const storageQuery = parseDashboardListQuery(searchParams, 'storage');
 
     const players = users.map(user => {
         const storage = storageMap.get(user.userId);
@@ -241,6 +259,52 @@ async function buildDashboardPayload(
         };
     });
 
+    const pagedRooms = paginateDashboardList(rooms, roomQuery, (room, search) => {
+        return matchesSearch(search, [
+            room.roomId,
+            room.name,
+            room.ownerUserId,
+            room.state,
+            room.state === 'open' ? '开放中' : room.state === 'countdown' ? '倒计时中' : room.state === 'playing' ? '游戏中' : room.state,
+            room.playerCount,
+            room.maxPlayers,
+            ...room.players.flatMap(player => [
+                player.userId,
+                player.username,
+                player.displayName,
+                player.isOnline ? 'online' : 'offline',
+                player.isOnline ? '在线' : '离线',
+                player.isReady ? 'ready' : 'not ready',
+                player.isReady ? '已准备' : '未准备'
+            ])
+        ]);
+    });
+
+    const pagedPlayers = paginateDashboardList(players, playerQuery, (player, search) => {
+        return matchesSearch(search, [
+            player.userId,
+            player.username,
+            player.displayName,
+            player.roomId,
+            player.isOnline ? 'online' : 'offline',
+            player.isOnline ? '在线' : '离线',
+            player.sessionCount,
+            player.storageKeyCount
+        ]);
+    });
+
+    const pagedStorages = paginateDashboardList(storagesView, storageQuery, (storage, search) => {
+        return matchesSearch(search, [
+            storage.userId,
+            storage.username,
+            storage.displayName,
+            storage.version,
+            storage.keyCount,
+            ...Object.keys(storage.data),
+            ...Object.values(storage.data)
+        ]);
+    });
+
     let sessionCount = 0;
     for (const value of sessionCounts.values()) {
         sessionCount += value;
@@ -263,10 +327,78 @@ async function buildDashboardPayload(
             storageCount: storages.length,
             sessionCount
         },
-        rooms,
-        players,
-        storages: storagesView
+        rooms: pagedRooms.items,
+        roomPager: pagedRooms.pager,
+        players: pagedPlayers.items,
+        playerPager: pagedPlayers.pager,
+        storages: pagedStorages.items,
+        storagePager: pagedStorages.pager
     };
+}
+
+function parseDashboardListQuery(searchParams: URLSearchParams, prefix: string): DashboardListQuery {
+    return {
+        search: (searchParams.get(`${prefix}Search`) ?? '').trim(),
+        page: parsePositiveInteger(searchParams.get(`${prefix}Page`), 1),
+        pageSize: Math.min(
+            parsePositiveInteger(searchParams.get(`${prefix}PageSize`), DEFAULT_ADMIN_PAGE_SIZE),
+            MAX_ADMIN_PAGE_SIZE
+        )
+    };
+}
+
+function parsePositiveInteger(input: string | null, defaultValue: number) {
+    if (!input) {
+        return defaultValue;
+    }
+
+    const parsed = Number(input);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        return defaultValue;
+    }
+
+    return parsed;
+}
+
+function paginateDashboardList<T>(
+    items: T[],
+    query: DashboardListQuery,
+    matcher: (item: T, normalizedSearch: string) => boolean
+) {
+    const normalizedSearch = query.search.toLowerCase();
+    const filteredItems = normalizedSearch
+        ? items.filter(item => matcher(item, normalizedSearch))
+        : items;
+    const filteredTotal = filteredItems.length;
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / query.pageSize));
+    const page = Math.min(query.page, totalPages);
+    const start = (page - 1) * query.pageSize;
+
+    return {
+        items: filteredItems.slice(start, start + query.pageSize),
+        pager: {
+            search: query.search,
+            page,
+            pageSize: query.pageSize,
+            total: items.length,
+            filteredTotal,
+            totalPages
+        } as DashboardPager
+    };
+}
+
+function matchesSearch(search: string, values: Array<string | number | null | undefined>) {
+    for (const value of values) {
+        if (value === null || value === undefined) {
+            continue;
+        }
+
+        if (String(value).toLowerCase().includes(search)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function authenticate(

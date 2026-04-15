@@ -206,13 +206,65 @@ describe.sequential('AdminWeb', () => {
 
         const dashboard = await dashboardResponse.json() as {
             rooms: { roomId: string }[]
+            roomPager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number, search: string }
             players: { userId: string, displayName: string, storageKeyCount: number }[]
+            playerPager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number, search: string }
             storages: { userId: string, data: Record<string, string> }[]
+            storagePager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number, search: string }
         };
 
         assert.ok(dashboard.rooms.some(room => room.roomId === roomId));
+        assert.strictEqual(dashboard.roomPager.pageSize, 20);
         assert.ok(dashboard.players.some(player => player.userId === aliceUserId && player.storageKeyCount === 1));
         assert.ok(dashboard.storages.some(storage => storage.userId === aliceUserId && storage.data.hp === '100'));
+
+        const filteredDashboardResponse = await fetch(`${adminBaseUrl}/admin/api/dashboard?roomSearch=${encodeURIComponent('Admin Room')}&roomPageSize=1&playerSearch=${encodeURIComponent('admin_bob')}&playerPageSize=1&storageSearch=${encodeURIComponent('hp')}&storagePageSize=1`, {
+            headers: {
+                Cookie: sessionCookie
+            }
+        });
+        assert.strictEqual(filteredDashboardResponse.status, 200);
+
+        const filteredDashboard = await filteredDashboardResponse.json() as {
+            rooms: { roomId: string }[]
+            roomPager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number, search: string }
+            players: { userId: string }[]
+            playerPager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number, search: string }
+            storages: { userId: string }[]
+            storagePager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number, search: string }
+        };
+
+        assert.strictEqual(filteredDashboard.roomPager.pageSize, 1);
+        assert.strictEqual(filteredDashboard.roomPager.filteredTotal, 1);
+        assert.strictEqual(filteredDashboard.rooms.length, 1);
+        assert.strictEqual(filteredDashboard.rooms[0].roomId, roomId);
+        assert.strictEqual(filteredDashboard.playerPager.pageSize, 1);
+        assert.strictEqual(filteredDashboard.playerPager.filteredTotal, 1);
+        assert.strictEqual(filteredDashboard.playerPager.search, 'admin_bob');
+        assert.strictEqual(filteredDashboard.players.length, 1);
+        assert.strictEqual(filteredDashboard.players[0].userId, bobUserId);
+        assert.strictEqual(filteredDashboard.storagePager.pageSize, 1);
+        assert.strictEqual(filteredDashboard.storagePager.filteredTotal, 1);
+        assert.strictEqual(filteredDashboard.storages.length, 1);
+        assert.strictEqual(filteredDashboard.storages[0].userId, aliceUserId);
+
+        const pagedPlayersResponse = await fetch(`${adminBaseUrl}/admin/api/dashboard?playerPage=2&playerPageSize=1`, {
+            headers: {
+                Cookie: sessionCookie
+            }
+        });
+        assert.strictEqual(pagedPlayersResponse.status, 200);
+
+        const pagedPlayersDashboard = await pagedPlayersResponse.json() as {
+            players: { userId: string }[]
+            playerPager: { page: number, pageSize: number, total: number, filteredTotal: number, totalPages: number }
+        };
+        assert.strictEqual(pagedPlayersDashboard.playerPager.page, 2);
+        assert.strictEqual(pagedPlayersDashboard.playerPager.pageSize, 1);
+        assert.strictEqual(pagedPlayersDashboard.playerPager.total, 2);
+        assert.strictEqual(pagedPlayersDashboard.playerPager.filteredTotal, 2);
+        assert.strictEqual(pagedPlayersDashboard.playerPager.totalPages, 2);
+        assert.strictEqual(pagedPlayersDashboard.players.length, 1);
 
         const updateDisplayName = await fetch(`${adminBaseUrl}/admin/api/accounts/${encodeURIComponent(aliceUserId)}/display-name`, {
             method: 'POST',

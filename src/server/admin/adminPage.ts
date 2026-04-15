@@ -40,7 +40,7 @@ export function renderAdminPage() {
     .login { min-height: calc(100vh - 40px); display:flex; align-items:center; justify-content:center; }
     .login .card { width:min(420px,100%); padding:24px; }
     .field { display:grid; gap:6px; margin-top:12px; }
-    input {
+    input, select {
       width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--line);
       background: rgba(255,255,255,.82); font:inherit;
     }
@@ -49,6 +49,7 @@ export function renderAdminPage() {
       transition: transform .14s ease, opacity .14s ease;
     }
     button:hover { transform: translateY(-1px); }
+    button:disabled { opacity:.48; cursor:not-allowed; transform:none; }
     .primary { background: var(--accent); color:#fff; }
     .secondary { background: rgba(31,107,82,.12); color: var(--accent); }
     .danger { background: rgba(166,69,50,.14); color: var(--danger); }
@@ -64,6 +65,12 @@ export function renderAdminPage() {
     .summary .card { padding:16px; }
     .summary strong { display:block; margin-top:10px; font-size:28px; }
     .section-head { display:flex; justify-content:space-between; gap:12px; align-items:end; margin-bottom:12px; }
+    .section-tools { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .filter-bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; flex:1 1 680px; }
+    .search-input { flex:1 1 280px; min-width:220px; }
+    .inline-field { display:flex; gap:8px; align-items:center; color:var(--muted); }
+    .inline-field span { font-size:13px; white-space:nowrap; }
+    .inline-field select { min-width:92px; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse: collapse; }
     th, td { padding:12px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; font-size:14px; }
@@ -74,6 +81,9 @@ export function renderAdminPage() {
     .pill.off { background:rgba(109,98,86,.12); color:var(--muted); }
     .stack { display:flex; flex-wrap:wrap; gap:8px; }
     .code { max-height:210px; overflow:auto; padding:10px 12px; border-radius:12px; background:rgba(0,0,0,.05); white-space:pre-wrap; word-break:break-word; }
+    .list-meta { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:12px; }
+    .pagination { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .empty-state { padding:12px 2px; }
     @media (max-width: 900px) {
       .page { padding: 14px; }
       .hero, .section-head { flex-direction:column; align-items:stretch; }
@@ -137,11 +147,14 @@ export function renderAdminPage() {
     var loginBanner = document.getElementById('loginBanner');
     var dashboardBanner = document.getElementById('dashboardBanner');
     var refreshTimer = null;
+    var listState = createInitialListState();
 
     document.getElementById('loginForm').addEventListener('submit', onLogin);
     document.getElementById('refreshButton').addEventListener('click', function () { void loadDashboard(); });
     document.getElementById('logoutButton').addEventListener('click', onLogout);
     dashboardView.addEventListener('click', onDashboardClick);
+    dashboardView.addEventListener('submit', onDashboardSubmit);
+    dashboardView.addEventListener('change', onDashboardChange);
 
     void init();
 
@@ -195,6 +208,17 @@ export function renderAdminPage() {
       }
 
       var action = button.dataset.action;
+      if (action === 'change-page') {
+        await changeListPage(button.dataset.list || '', button.dataset.page || '');
+        return;
+      }
+
+      if (action === 'reset-list') {
+        resetListState(button.dataset.list || '');
+        await loadDashboard();
+        return;
+      }
+
       if (action === 'dismiss-room') {
         await dismissRoom(button.dataset.roomId || '');
         return;
@@ -220,6 +244,32 @@ export function renderAdminPage() {
       }
     }
 
+    async function onDashboardSubmit(event) {
+      var form = event.target;
+      if (!form || typeof form.matches !== 'function' || !form.matches('form[data-list]')) {
+        return;
+      }
+
+      event.preventDefault();
+      applyListFormState(form, true);
+      await loadDashboard();
+    }
+
+    async function onDashboardChange(event) {
+      var target = event.target;
+      if (!target || target.name !== 'pageSize') {
+        return;
+      }
+
+      var form = typeof target.closest === 'function' ? target.closest('form[data-list]') : null;
+      if (!form) {
+        return;
+      }
+
+      applyListFormState(form, true);
+      await loadDashboard();
+    }
+
     function showLogin() {
       loginView.classList.remove('hidden');
       dashboardView.classList.add('hidden');
@@ -229,12 +279,16 @@ export function renderAdminPage() {
       loginView.classList.add('hidden');
       dashboardView.classList.remove('hidden');
       if (!refreshTimer) {
-        refreshTimer = setInterval(function () { void loadDashboard(); }, 5000);
+        refreshTimer = setInterval(function () {
+          if (!shouldPauseAutoRefresh()) {
+            void loadDashboard();
+          }
+        }, 5000);
       }
     }
 
     async function loadDashboard() {
-      var response = await api('/admin/api/dashboard');
+      var response = await api(buildDashboardUrl());
       if (!response.ok) {
         if (response.status === 401) {
           if (refreshTimer) {
@@ -268,9 +322,13 @@ export function renderAdminPage() {
       addSummary(summary, '存储记录', data.summary.storageCount);
       addSummary(summary, '活跃会话', data.summary.sessionCount);
 
-      renderRooms(data.rooms);
-      renderPlayers(data.players);
-      renderStorages(data.storages);
+      syncListState('rooms', data.roomPager);
+      syncListState('players', data.playerPager);
+      syncListState('storages', data.storagePager);
+
+      renderRooms(data.rooms, data.roomPager);
+      renderPlayers(data.players, data.playerPager);
+      renderStorages(data.storages, data.storagePager);
     }
 
     function addSummary(parent, label, value) {
@@ -280,9 +338,107 @@ export function renderAdminPage() {
       parent.appendChild(card);
     }
 
-    function renderRooms(rooms) {
+    function createInitialListState() {
+      return {
+        rooms: createListConfig(),
+        players: createListConfig(),
+        storages: createListConfig()
+      };
+    }
+
+    function createListConfig() {
+      return {
+        search: '',
+        page: 1,
+        pageSize: 20
+      };
+    }
+
+    function getListConfig(listKey) {
+      return listState[listKey] || null;
+    }
+
+    function applyListFormState(form, resetPage) {
+      var listKey = form.dataset.list || '';
+      var state = getListConfig(listKey);
+      if (!state) {
+        return;
+      }
+
+      var searchInput = form.querySelector('input[name="search"]');
+      var pageSizeSelect = form.querySelector('select[name="pageSize"]');
+      state.search = searchInput ? searchInput.value.trim() : '';
+      state.pageSize = parsePositiveInteger(pageSizeSelect ? pageSizeSelect.value : '', state.pageSize);
+      if (resetPage) {
+        state.page = 1;
+      }
+    }
+
+    function resetListState(listKey) {
+      var state = getListConfig(listKey);
+      if (!state) {
+        return;
+      }
+
+      state.search = '';
+      state.page = 1;
+    }
+
+    function syncListState(listKey, pager) {
+      var state = getListConfig(listKey);
+      if (!state || !pager) {
+        return;
+      }
+
+      state.search = pager.search || '';
+      state.page = pager.page || 1;
+      state.pageSize = pager.pageSize || state.pageSize;
+    }
+
+    async function changeListPage(listKey, pageValue) {
+      var state = getListConfig(listKey);
+      if (!state) {
+        return;
+      }
+
+      var nextPage = parsePositiveInteger(pageValue, state.page);
+      if (nextPage === state.page) {
+        return;
+      }
+
+      state.page = nextPage;
+      await loadDashboard();
+    }
+
+    function buildDashboardUrl() {
+      var params = new URLSearchParams();
+      appendListParams(params, 'room', listState.rooms);
+      appendListParams(params, 'player', listState.players);
+      appendListParams(params, 'storage', listState.storages);
+      return '/admin/api/dashboard?' + params.toString();
+    }
+
+    function appendListParams(params, prefix, state) {
+      params.set(prefix + 'Page', String(state.page));
+      params.set(prefix + 'PageSize', String(state.pageSize));
+      if (state.search) {
+        params.set(prefix + 'Search', state.search);
+      }
+    }
+
+    function shouldPauseAutoRefresh() {
+      var active = document.activeElement;
+      return !!(active && dashboardView.contains(active) && (
+        active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA'
+      ));
+    }
+
+    function renderRooms(rooms, pager) {
+      var html = renderListTools('rooms', pager, '搜索房间名、房间 ID、房主、玩家');
       if (!rooms.length) {
-        document.getElementById('roomsContainer').innerHTML = '<div class="muted">当前没有活跃房间。</div>';
+        html += '<div class="muted empty-state">' + esc(resolveEmptyMessage(pager, '当前没有活跃房间。', '没有匹配的房间。')) + '</div>';
+        html += renderListMeta('rooms', pager, '房间');
+        document.getElementById('roomsContainer').innerHTML = html;
         return;
       }
       var rows = rooms.map(function (room) {
@@ -300,12 +456,17 @@ export function renderAdminPage() {
           '<td><button class="danger" type="button" data-action="dismiss-room" data-room-id="' + esc(room.roomId) + '">删除房间</button></td>' +
           '</tr>';
       }).join('');
-      document.getElementById('roomsContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>房间</th><th>状态</th><th>玩家</th><th>时间</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      html += '<div class="table-wrap"><table><thead><tr><th>房间</th><th>状态</th><th>玩家</th><th>时间</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      html += renderListMeta('rooms', pager, '房间');
+      document.getElementById('roomsContainer').innerHTML = html;
     }
 
-    function renderPlayers(players) {
+    function renderPlayers(players, pager) {
+      var html = renderListTools('players', pager, '搜索玩家昵称、账号、用户 ID、房间 ID');
       if (!players.length) {
-        document.getElementById('playersContainer').innerHTML = '<div class="muted">当前没有注册玩家。</div>';
+        html += '<div class="muted empty-state">' + esc(resolveEmptyMessage(pager, '当前没有注册玩家。', '没有匹配的玩家。')) + '</div>';
+        html += renderListMeta('players', pager, '玩家');
+        document.getElementById('playersContainer').innerHTML = html;
         return;
       }
       var rows = players.map(function (player) {
@@ -317,12 +478,17 @@ export function renderAdminPage() {
           '<td><div class="stack"><button class="secondary" type="button" data-action="edit-display-name" data-user-id="' + esc(player.userId) + '" data-display-name="' + esc(player.displayName) + '">修改名称</button><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(player.userId) + '">写入存储</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(player.userId) + '">删除键</button></div></td>' +
           '</tr>';
       }).join('');
-      document.getElementById('playersContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>玩家</th><th>状态</th><th>所在房间</th><th>存储</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      html += '<div class="table-wrap"><table><thead><tr><th>玩家</th><th>状态</th><th>所在房间</th><th>存储</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      html += renderListMeta('players', pager, '玩家');
+      document.getElementById('playersContainer').innerHTML = html;
     }
 
-    function renderStorages(storages) {
+    function renderStorages(storages, pager) {
+      var html = renderListTools('storages', pager, '搜索用户、键名、键值');
       if (!storages.length) {
-        document.getElementById('storagesContainer').innerHTML = '<div class="muted">当前还没有存储数据。</div>';
+        html += '<div class="muted empty-state">' + esc(resolveEmptyMessage(pager, '当前还没有存储数据。', '没有匹配的存储记录。')) + '</div>';
+        html += renderListMeta('storages', pager, '存储记录');
+        document.getElementById('storagesContainer').innerHTML = html;
         return;
       }
       var rows = storages.map(function (storage) {
@@ -333,7 +499,50 @@ export function renderAdminPage() {
           '<td><div class="stack"><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(storage.userId) + '">合并 JSON</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(storage.userId) + '">删除键</button></div></td>' +
           '</tr>';
       }).join('');
-      document.getElementById('storagesContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>用户</th><th>元信息</th><th>数据</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      html += '<div class="table-wrap"><table><thead><tr><th>用户</th><th>元信息</th><th>数据</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      html += renderListMeta('storages', pager, '存储记录');
+      document.getElementById('storagesContainer').innerHTML = html;
+    }
+
+    function renderListTools(listKey, pager, placeholder) {
+      return '<div class="section-tools">' +
+        '<form class="filter-bar" data-list="' + esc(listKey) + '">' +
+        '<input class="search-input" type="search" name="search" placeholder="' + esc(placeholder) + '" value="' + esc(pager.search || '') + '" />' +
+        '<label class="inline-field"><span>每页</span><select name="pageSize">' + renderPageSizeOptions(pager.pageSize || 20) + '</select></label>' +
+        '<button class="secondary" type="submit">搜索</button>' +
+        '<button class="ghost" type="button" data-action="reset-list" data-list="' + esc(listKey) + '">清空</button>' +
+        '</form>' +
+        '<div class="muted">筛选后 ' + esc(String(pager.filteredTotal || 0)) + ' / 总数 ' + esc(String(pager.total || 0)) + '</div>' +
+        '</div>';
+    }
+
+    function renderPageSizeOptions(current) {
+      var options = [20, 50, 100, 200];
+      if (options.indexOf(current) === -1) {
+        options.push(current);
+        options.sort(function (a, b) { return a - b; });
+      }
+
+      return options.map(function (size) {
+        return '<option value="' + esc(String(size)) + '"' + (size === current ? ' selected' : '') + '>' + esc(String(size)) + '</option>';
+      }).join('');
+    }
+
+    function renderListMeta(listKey, pager, itemLabel) {
+      var start = pager.filteredTotal ? ((pager.page - 1) * pager.pageSize + 1) : 0;
+      var end = pager.filteredTotal ? Math.min(pager.filteredTotal, pager.page * pager.pageSize) : 0;
+      return '<div class="list-meta">' +
+        '<div class="muted">当前显示 ' + esc(String(start)) + ' - ' + esc(String(end)) + '，共 ' + esc(String(pager.filteredTotal || 0)) + ' 个' + esc(itemLabel) + '</div>' +
+        '<div class="pagination">' +
+        '<button class="ghost" type="button" data-action="change-page" data-list="' + esc(listKey) + '" data-page="' + esc(String(Math.max(1, pager.page - 1))) + '"' + (pager.page <= 1 ? ' disabled' : '') + '>上一页</button>' +
+        '<span class="muted">第 ' + esc(String(pager.page || 1)) + ' / ' + esc(String(pager.totalPages || 1)) + ' 页</span>' +
+        '<button class="ghost" type="button" data-action="change-page" data-list="' + esc(listKey) + '" data-page="' + esc(String(Math.min(pager.totalPages || 1, pager.page + 1))) + '"' + (pager.page >= pager.totalPages ? ' disabled' : '') + '>下一页</button>' +
+        '</div>' +
+        '</div>';
+    }
+
+    function resolveEmptyMessage(pager, emptyMessage, searchMessage) {
+      return pager && pager.search ? searchMessage : emptyMessage;
     }
 
     async function dismissRoom(roomId) {
@@ -405,6 +614,15 @@ export function renderAdminPage() {
       target.className = 'banner';
       target.textContent = message || '';
       if (kind) target.classList.add('show', kind);
+    }
+
+    function parsePositiveInteger(value, fallback) {
+      var parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return fallback;
+      }
+
+      return parsed;
     }
 
     function fmtDate(value) {
