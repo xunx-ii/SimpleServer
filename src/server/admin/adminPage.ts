@@ -85,7 +85,6 @@ export function renderAdminPage() {
     <section id="loginView" class="login">
       <div class="card">
         <h2>后台登录</h2>
-        <p class="muted">登录账号和密码来自本地 config.json。</p>
         <div id="loginBanner" class="banner"></div>
         <form id="loginForm">
           <label class="field"><span>用户名</span><input id="usernameInput" required autocomplete="username" /></label>
@@ -99,7 +98,6 @@ export function renderAdminPage() {
       <div class="hero">
         <div>
           <h1>SimpleServer 控制台</h1>
-          <p class="muted">在一个本地页面中查看房间、玩家、会话和用户存储信息。</p>
         </div>
         <div class="toolbar">
           <button id="refreshButton" class="ghost" type="button">刷新</button>
