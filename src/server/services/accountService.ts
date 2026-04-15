@@ -11,11 +11,20 @@ const PASSWORD_HASH_KEY_LENGTH = 64;
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
+type ConnectionSessionCache = {
+    token: string
+    session: SessionEntity
+};
+
 export class AccountService {
     private readonly sessionTtlMs: number;
     private readonly accountByUserId = new Map<string, AccountEntity>();
+    private readonly profileByUserId = new Map<string, UserProfile>();
     private readonly userIdByUsername = new Map<string, string>();
+    private readonly sessionByToken = new Map<string, SessionEntity>();
     private readonly sessionByTokenHash = new Map<string, SessionEntity>();
+    private readonly tokenByTokenHash = new Map<string, string>();
+    private readonly sessionByConnId = new Map<string, ConnectionSessionCache>();
 
     constructor(
         private readonly database: Database,
@@ -32,8 +41,16 @@ export class AccountService {
 
     dispose() {
         this.accountByUserId.clear();
+        this.profileByUserId.clear();
         this.userIdByUsername.clear();
+        this.sessionByToken.clear();
         this.sessionByTokenHash.clear();
+        this.tokenByTokenHash.clear();
+        this.sessionByConnId.clear();
+    }
+
+    unregisterConnection(connId: string) {
+        this.sessionByConnId.delete(connId);
     }
 
     async register(
@@ -115,15 +132,18 @@ export class AccountService {
     }
 
     async requireAccount(token: string, connId?: string) {
-        const session = await this.requireSession(token);
+        const normalizedToken = normalizeToken(token);
+        const session = connId
+            ? await this.requireSessionForConnection(normalizedToken, connId)
+            : await this.requireSession(normalizedToken);
         if (connId) {
             this.connections.bind(connId, session.userId);
+            this.cacheConnectionSession(connId, normalizedToken, session);
         }
 
         const account = await this.getAccountEntityByUserId(session.userId);
         if (!account) {
-            await this.database.sessions.remove({ tokenHash: session.tokenHash });
-            this.sessionByTokenHash.delete(session.tokenHash);
+            await this.deleteSession(session, normalizedToken);
             throw new Error('Account not found');
         }
 
@@ -241,10 +261,11 @@ export class AccountService {
         };
         await this.database.sessions.insert(session);
         this.cacheAccount(account);
-        this.cacheSession(session);
+        this.cacheSession(session, token);
 
         if (connId) {
             this.connections.bind(connId, account.userId);
+            this.cacheConnectionSession(connId, token, session);
         }
 
         return {
@@ -253,16 +274,32 @@ export class AccountService {
         };
     }
 
-    private async requireSession(token: string) {
-        const normalizedToken = token?.trim();
-        if (!normalizedToken) {
-            throw new Error('Missing auth token');
+    private async requireSessionForConnection(token: string, connId: string) {
+        const cached = this.sessionByConnId.get(connId);
+        if (cached?.token === token) {
+            const session = await this.ensureSessionValidity(cached.session, token);
+            if (session !== cached.session) {
+                this.cacheConnectionSession(connId, token, session);
+            }
+            return session;
         }
 
-        const tokenHash = hashToken(normalizedToken);
+        const session = await this.requireSession(token);
+        this.cacheConnectionSession(connId, token, session);
+        return session;
+    }
+
+    private async requireSession(token: string) {
+        const tokenCachedSession = this.sessionByToken.get(token);
+        if (tokenCachedSession) {
+            return this.ensureSessionValidity(tokenCachedSession, token);
+        }
+
+        const tokenHash = hashToken(token);
         const cachedSession = this.sessionByTokenHash.get(tokenHash);
         if (cachedSession) {
-            return this.ensureSessionValidity(cachedSession);
+            this.cacheSession(cachedSession, token);
+            return this.ensureSessionValidity(cachedSession, token);
         }
 
         const session = await this.database.sessions.findOne({ tokenHash });
@@ -270,23 +307,23 @@ export class AccountService {
             throw new Error('Auth token expired or invalid');
         }
 
-        this.cacheSession(session);
-        return this.ensureSessionValidity(session);
+        this.cacheSession(session, token);
+        return this.ensureSessionValidity(session, token);
     }
 
-    private async ensureSessionValidity(session: SessionEntity) {
-        const now = new Date();
-        if (session.expiresAt.getTime() <= now.getTime()) {
-            await this.database.sessions.remove({ tokenHash: session.tokenHash });
-            this.sessionByTokenHash.delete(session.tokenHash);
+    private async ensureSessionValidity(session: SessionEntity, token?: string) {
+        const nowMs = Date.now();
+        if (session.expiresAt.getTime() <= nowMs) {
+            await this.deleteSession(session, token);
             throw new Error('Auth token expired or invalid');
         }
 
-        if (now.getTime() - session.lastSeenAt.getTime() >= Math.min(this.sessionTtlMs, SESSION_TOUCH_INTERVAL_MS)) {
+        if (nowMs - session.lastSeenAt.getTime() >= Math.min(this.sessionTtlMs, SESSION_TOUCH_INTERVAL_MS)) {
+            const lastSeenAt = new Date(nowMs);
             const updatedSession: SessionEntity = {
                 ...session,
-                lastSeenAt: now,
-                expiresAt: new Date(now.getTime() + this.sessionTtlMs)
+                lastSeenAt,
+                expiresAt: new Date(nowMs + this.sessionTtlMs)
             };
             await this.database.sessions.update(
                 { tokenHash: session.tokenHash },
@@ -297,7 +334,7 @@ export class AccountService {
                     }
                 }
             );
-            this.cacheSession(updatedSession);
+            this.cacheSession(updatedSession, token);
             return updatedSession;
         }
 
@@ -340,20 +377,59 @@ export class AccountService {
     private cacheAccount(account: AccountEntity) {
         this.accountByUserId.set(account.userId, account);
         this.userIdByUsername.set(account.username, account.userId);
-    }
-
-    private cacheSession(session: SessionEntity) {
-        this.sessionByTokenHash.set(session.tokenHash, session);
-    }
-
-    private toUserProfile(account: AccountEntity): UserProfile {
-        return {
+        this.profileByUserId.set(account.userId, {
             userId: account.userId,
             username: account.username,
             displayName: account.displayName,
             createdAt: account.createdAt,
             lastLoginAt: account.lastLoginAt
-        };
+        });
+    }
+
+    private cacheSession(session: SessionEntity, token?: string) {
+        this.sessionByTokenHash.set(session.tokenHash, session);
+        if (token) {
+            this.sessionByToken.set(token, session);
+            this.tokenByTokenHash.set(session.tokenHash, token);
+        }
+    }
+
+    private cacheConnectionSession(connId: string, token: string, session: SessionEntity) {
+        this.sessionByConnId.set(connId, {
+            token,
+            session
+        });
+    }
+
+    private async deleteSession(session: SessionEntity, token?: string) {
+        await this.database.sessions.remove({ tokenHash: session.tokenHash });
+        this.removeSessionCache(session.tokenHash, token);
+    }
+
+    private removeSessionCache(tokenHash: string, token?: string) {
+        this.sessionByTokenHash.delete(tokenHash);
+
+        const resolvedToken = token ?? this.tokenByTokenHash.get(tokenHash);
+        if (resolvedToken) {
+            this.sessionByToken.delete(resolvedToken);
+        }
+        this.tokenByTokenHash.delete(tokenHash);
+
+        for (const [connId, cache] of this.sessionByConnId.entries()) {
+            if (cache.session.tokenHash === tokenHash) {
+                this.sessionByConnId.delete(connId);
+            }
+        }
+    }
+
+    private toUserProfile(account: AccountEntity): UserProfile {
+        const cached = this.profileByUserId.get(account.userId);
+        if (cached) {
+            return cached;
+        }
+
+        this.cacheAccount(account);
+        return this.profileByUserId.get(account.userId)!;
     }
 }
 
@@ -385,6 +461,15 @@ function normalizeUserId(userId: string) {
     const normalized = userId.trim();
     if (!normalized) {
         throw new Error('User id is required');
+    }
+
+    return normalized;
+}
+
+function normalizeToken(token: string) {
+    const normalized = token?.trim();
+    if (!normalized) {
+        throw new Error('Missing auth token');
     }
 
     return normalized;

@@ -73,6 +73,52 @@ describe('PerformanceOptimization', () => {
         assert.strictEqual(accountFindOneCount, 1);
     });
 
+    it('reuses connection-scoped auth state on hot profile requests', async () => {
+        const server = new WsServer(serviceProto, {
+            port: 0,
+            json: true
+        });
+        const database = await createDatabase({
+            inMemoryOnly: true
+        });
+        const connections = new ConnectionRegistry(server);
+        const warmAccounts = new AccountService(database, connections, {
+            sessionTtlMs: 5000
+        });
+        const cachedAccounts = new AccountService(database, connections, {
+            sessionTtlMs: 5000
+        });
+
+        disposableServers.push(server);
+        disposableAccounts.push(warmAccounts, cachedAccounts);
+        disposableConnections.push(connections);
+
+        const session = await warmAccounts.register({
+            username: 'conn_cache_perf_user',
+            password: 'password123',
+            displayName: 'Conn Cache Perf User'
+        });
+
+        const firstProfile = await cachedAccounts.getProfile(session.token, 'perf-conn-1');
+        assert.strictEqual(firstProfile.username, 'conn_cache_perf_user');
+
+        let sessionFindOneCount = 0;
+        const originalSessionFindOne = database.sessions.findOne.bind(database.sessions);
+        database.sessions.findOne = async query => {
+            sessionFindOneCount += 1;
+            return originalSessionFindOne(query);
+        };
+
+        (cachedAccounts as any).sessionByToken.clear();
+        (cachedAccounts as any).sessionByTokenHash.clear();
+        (cachedAccounts as any).tokenByTokenHash.clear();
+
+        const secondProfile = await cachedAccounts.getProfile(session.token, 'perf-conn-1');
+
+        assert.strictEqual(secondProfile.userId, firstProfile.userId);
+        assert.strictEqual(sessionFindOneCount, 0);
+    });
+
     it('resolves online users and target connections without scanning server connection arrays', () => {
         const server = new WsServer(serviceProto, {
             port: 0,

@@ -58,6 +58,7 @@ export async function createGameServer(options: {
     });
 
     server.flows.postDisconnectFlow.push(async flowData => {
+        appContext.accounts.unregisterConnection(flowData.conn.id);
         const userId = appContext.connections.unregisterConnection(flowData.conn.id);
         if (userId && !appContext.connections.isUserOnline(userId)) {
             await appContext.rooms.handleUserOffline(userId);
