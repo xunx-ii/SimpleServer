@@ -9,6 +9,7 @@
     "doc": "tsrpc-cli doc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "loadtest": "node -r ts-node/register scripts/loadtest.ts",
     "proto": "tsrpc-cli proto",
     "sync": "tsrpc-cli sync",
     "api": "tsrpc-cli api"

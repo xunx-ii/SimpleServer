@@ -22,6 +22,23 @@ You can override these fields in `config.json` when you need more diagnostics.
 npm run build
 ```
 
+### Local load test
+Default command starts an in-memory local server and runs a mixed benchmark:
+
+```shell
+npm run loadtest
+```
+
+Examples:
+
+```shell
+npm run loadtest -- --scenario profile --clients 64 --duration 20 --warmup 5
+npm run loadtest -- --scenario room-sync --clients 40 --room-size 4
+npm run loadtest -- --no-start-server --host 127.0.0.1 --port 23414 --scenario storage-save
+```
+
+Supported scenarios: `profile`, `storage-save`, `room-sync`, `mixed`
+
 ### Generate API document
 
 Generate API document in swagger/openapi and markdown format.
