@@ -100,6 +100,7 @@ export async function createGameServer(options: {
                 started = false;
             }
 
+            await appContext.storage.dispose();
             appContext.rooms.dispose();
             appContext.accounts.dispose();
             appContext.connections.clear();

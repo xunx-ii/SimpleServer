@@ -2,15 +2,39 @@ import { Database } from '../database';
 import { StorageEntity } from '../models';
 import { AccountService } from './accountService';
 
+const STORAGE_FLUSH_DELAY_MS = 25;
+const DELETE_STORAGE_VALUE = Symbol('delete_storage_value');
+
+type PendingStorageValue = string | typeof DELETE_STORAGE_VALUE;
+
+type StorageState = {
+    entity: StorageEntity | null
+    pendingChanges: Map<string, PendingStorageValue>
+    flushTimer?: NodeJS.Timeout
+    flushPromise?: Promise<void>
+};
+
 export class StorageService {
-    private readonly storageByUserId = new Map<string, StorageEntity | null>();
-    private readonly mutationTailByUserId = new Map<string, Promise<void>>();
-    private readonly loadByUserId = new Map<string, Promise<StorageEntity | null>>();
+    private readonly stateByUserId = new Map<string, StorageState>();
+    private readonly loadByUserId = new Map<string, Promise<StorageState>>();
 
     constructor(
         private readonly database: Database,
         private readonly accounts: AccountService
     ) {
+    }
+
+    async dispose() {
+        await this.flushAll();
+
+        for (const state of this.stateByUserId.values()) {
+            if (state.flushTimer) {
+                clearTimeout(state.flushTimer);
+            }
+        }
+
+        this.stateByUserId.clear();
+        this.loadByUserId.clear();
     }
 
     async save(token: string, save: Record<string, string>, connId?: string) {
@@ -25,20 +49,30 @@ export class StorageService {
             throw new Error('Storage key is required');
         }
 
-        const current = await this.getOrLoadStorage(account.userId);
-        return current?.data[normalizedKey] ?? null;
+        const state = await this.getOrLoadState(account.userId);
+        return state.entity?.data[normalizedKey] ?? null;
     }
 
     async listStorages() {
         const storages = await this.database.storages.findMany({});
+        const merged = new Map<string, StorageEntity>();
+
         for (const storage of storages) {
-            this.cacheStorage(storage);
+            merged.set(storage.userId, storage);
+            this.cacheLoadedStorage(storage);
         }
-        return storages.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+        for (const [userId, state] of this.stateByUserId) {
+            if (state.entity) {
+                merged.set(userId, state.entity);
+            }
+        }
+
+        return Array.from(merged.values()).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
     }
 
     async getStorageByUserId(userId: string) {
-        return this.getOrLoadStorage(normalizeUserId(userId));
+        return (await this.getOrLoadState(normalizeUserId(userId))).entity;
     }
 
     async adminSave(userId: string, save: Record<string, string>) {
@@ -56,7 +90,69 @@ export class StorageService {
             throw new Error('At least one storage key is required');
         }
 
-        return this.runExclusive(normalizedUserId, () => this.deleteKeysUnlocked(normalizedUserId, normalizedKeys));
+        const state = await this.getOrLoadState(normalizedUserId);
+        if (!state.entity) {
+            return [];
+        }
+
+        const deletedKeys = normalizedKeys.filter(key => key in state.entity!.data);
+        if (!deletedKeys.length) {
+            return [];
+        }
+
+        const now = new Date();
+        const nextData = {
+            ...(state.entity.data ?? {})
+        };
+
+        for (const key of deletedKeys) {
+            delete nextData[key];
+            state.pendingChanges.set(key, DELETE_STORAGE_VALUE);
+        }
+
+        state.entity = {
+            ...state.entity,
+            data: nextData,
+            updatedAt: now,
+            version: (state.entity.version ?? 0) + 1
+        };
+
+        this.scheduleFlush(normalizedUserId, state);
+        return deletedKeys;
+    }
+
+    async flushAll() {
+        for (const state of this.stateByUserId.values()) {
+            if (state.flushTimer) {
+                clearTimeout(state.flushTimer);
+                state.flushTimer = undefined;
+            }
+        }
+
+        while (true) {
+            const flushes: Promise<void>[] = [];
+
+            for (const [userId, state] of this.stateByUserId) {
+                if (state.flushPromise) {
+                    flushes.push(state.flushPromise);
+                    continue;
+                }
+
+                if (state.pendingChanges.size) {
+                    flushes.push(this.flushUser(userId, state));
+                }
+            }
+
+            if (!flushes.length) {
+                return;
+            }
+
+            const results = await Promise.allSettled(flushes);
+            const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+            if (failure) {
+                throw failure.reason;
+            }
+        }
     }
 
     private async saveByUserId(userId: string, save: Record<string, string>) {
@@ -66,7 +162,35 @@ export class StorageService {
             return [];
         }
 
-        return this.runExclusive(userId, () => this.saveByUserIdUnlocked(userId, normalizedData, savedKeys));
+        const state = await this.getOrLoadState(userId);
+        const now = new Date();
+
+        if (!state.entity) {
+            state.entity = {
+                userId,
+                data: {},
+                createdAt: now,
+                updatedAt: now,
+                version: 0
+            };
+        }
+
+        state.entity = {
+            ...state.entity,
+            data: {
+                ...(state.entity.data ?? {}),
+                ...normalizedData
+            },
+            updatedAt: now,
+            version: (state.entity.version ?? 0) + 1
+        };
+
+        for (const [key, value] of Object.entries(normalizedData)) {
+            state.pendingChanges.set(key, value);
+        }
+
+        this.scheduleFlush(userId, state);
+        return savedKeys;
     }
 
     private async requireExistingUser(userId: string) {
@@ -76,9 +200,10 @@ export class StorageService {
         }
     }
 
-    private async getOrLoadStorage(userId: string) {
-        if (this.storageByUserId.has(userId)) {
-            return this.storageByUserId.get(userId) ?? null;
+    private async getOrLoadState(userId: string) {
+        const cached = this.stateByUserId.get(userId);
+        if (cached) {
+            return cached;
         }
 
         const pending = this.loadByUserId.get(userId);
@@ -88,9 +213,10 @@ export class StorageService {
 
         const task = this.database.storages.findOne({ userId })
             .then(storage => {
-                this.storageByUserId.set(userId, storage);
+                const state = createStorageState(storage);
+                this.stateByUserId.set(userId, state);
                 this.loadByUserId.delete(userId);
-                return storage;
+                return state;
             })
             .catch(error => {
                 this.loadByUserId.delete(userId);
@@ -101,159 +227,163 @@ export class StorageService {
         return task;
     }
 
-    private cacheStorage(storage: StorageEntity) {
-        this.storageByUserId.set(storage.userId, storage);
-    }
-
-    private clearCachedStorage(userId: string) {
-        this.storageByUserId.delete(userId);
-        this.loadByUserId.delete(userId);
-    }
-
-    private async runExclusive<T>(userId: string, task: () => Promise<T>) {
-        const previous = this.mutationTailByUserId.get(userId) ?? Promise.resolve();
-        const waitForTurn = previous.catch(() => undefined);
-        let release: (() => void) | undefined;
-        const current = new Promise<void>(resolve => {
-            release = resolve;
-        });
-        const tail = waitForTurn.then(() => current);
-        this.mutationTailByUserId.set(userId, tail);
-
-        await waitForTurn;
-
-        try {
-            return await task();
+    private cacheLoadedStorage(storage: StorageEntity) {
+        const state = this.stateByUserId.get(storage.userId);
+        if (!state) {
+            this.stateByUserId.set(storage.userId, createStorageState(storage));
+            return;
         }
-        finally {
-            release?.();
-            if (this.mutationTailByUserId.get(userId) === tail) {
-                this.mutationTailByUserId.delete(userId);
-            }
+
+        if (!state.pendingChanges.size && !state.flushPromise) {
+            state.entity = storage;
         }
     }
 
-    private async saveByUserIdUnlocked(userId: string, normalizedData: Record<string, string>, savedKeys: string[]) {
-        for (let attempt = 0; attempt < 2; ++attempt) {
-            const current = await this.getOrLoadStorage(userId);
-            if (!current) {
-                const inserted = await this.tryInsertStorage(userId, normalizedData);
-                if (inserted) {
-                    return savedKeys;
-                }
+    private scheduleFlush(userId: string, state: StorageState, delayMs = STORAGE_FLUSH_DELAY_MS) {
+        if (state.flushTimer || state.flushPromise || !state.pendingChanges.size) {
+            return;
+        }
 
-                continue;
-            }
-
-            const now = new Date();
-            const result = await this.database.storages.update(
-                { userId },
-                {
-                    $set: {
-                        updatedAt: now,
-                        ...toStorageSetFields(normalizedData)
-                    },
-                    $inc: {
-                        version: 1
-                    }
-                }
-            );
-
-            if (result.numAffected < 1) {
-                this.clearCachedStorage(userId);
-                continue;
-            }
-
-            this.cacheStorage({
-                ...current,
-                data: {
-                    ...(current.data ?? {}),
-                    ...normalizedData
-                },
-                updatedAt: now,
-                version: (current.version ?? 0) + 1
+        state.flushTimer = setTimeout(() => {
+            state.flushTimer = undefined;
+            void this.flushUser(userId, state).catch(error => {
+                reportBackgroundFlushError(userId, error);
             });
-
-            return savedKeys;
-        }
-
-        throw new Error('Storage save conflict, please retry');
+        }, delayMs);
     }
 
-    private async tryInsertStorage(userId: string, normalizedData: Record<string, string>) {
-        const now = new Date();
-        const entity: StorageEntity = {
-            userId,
-            data: normalizedData,
-            createdAt: now,
-            updatedAt: now,
-            version: 1
-        };
+    private async flushUser(userId: string, state: StorageState) {
+        if (state.flushPromise) {
+            return state.flushPromise;
+        }
 
+        if (!state.pendingChanges.size || !state.entity) {
+            return;
+        }
+
+        const entitySnapshot = cloneStorage(state.entity);
+        const pendingSnapshot = new Map(state.pendingChanges);
+        state.pendingChanges.clear();
+
+        const flushPromise = (async () => {
+            try {
+                if (!entitySnapshot._id) {
+                    await this.flushInsert(userId, entitySnapshot, pendingSnapshot);
+                }
+                else {
+                    await this.flushUpdate(entitySnapshot, pendingSnapshot);
+                }
+            }
+            catch (error) {
+                mergePendingChanges(state.pendingChanges, pendingSnapshot);
+                throw error;
+            }
+            finally {
+                state.flushPromise = undefined;
+                if (state.pendingChanges.size) {
+                    this.scheduleFlush(userId, state);
+                }
+            }
+        })();
+
+        state.flushPromise = flushPromise;
+        return flushPromise;
+    }
+
+    private async flushInsert(
+        userId: string,
+        entitySnapshot: StorageEntity,
+        pendingSnapshot: Map<string, PendingStorageValue>
+    ) {
         try {
-            const inserted = await this.database.storages.insert(entity);
-            this.cacheStorage(inserted);
-            return true;
+            const inserted = await this.database.storages.insert(entitySnapshot);
+            const currentState = this.stateByUserId.get(userId);
+            if (currentState?.entity && !currentState.entity._id) {
+                currentState.entity = {
+                    ...currentState.entity,
+                    _id: inserted._id ?? currentState.entity._id
+                };
+            }
         }
         catch (error) {
             if (!isUniqueConstraintError(error)) {
                 throw error;
             }
 
-            this.clearCachedStorage(userId);
-            return false;
+            await this.flushUpdate(entitySnapshot, pendingSnapshot);
         }
     }
 
-    private async deleteKeysUnlocked(userId: string, normalizedKeys: string[]) {
-        for (let attempt = 0; attempt < 2; ++attempt) {
-            const current = await this.getOrLoadStorage(userId);
-            if (!current) {
-                return [];
-            }
+    private async flushUpdate(
+        entitySnapshot: StorageEntity,
+        pendingSnapshot: Map<string, PendingStorageValue>
+    ) {
+        const setFields: Record<string, any> = {
+            updatedAt: entitySnapshot.updatedAt,
+            version: entitySnapshot.version ?? 0
+        };
+        const unsetFields: Record<string, true> = {};
 
-            const deletedKeys = normalizedKeys.filter(key => key in (current.data ?? {}));
-            if (!deletedKeys.length) {
-                return [];
-            }
-
-            const now = new Date();
-            const result = await this.database.storages.update(
-                { userId },
-                {
-                    $unset: toStorageUnsetFields(deletedKeys),
-                    $set: {
-                        updatedAt: now
-                    },
-                    $inc: {
-                        version: 1
-                    }
-                }
-            );
-
-            if (result.numAffected < 1) {
-                this.clearCachedStorage(userId);
+        for (const [key, value] of pendingSnapshot) {
+            if (value === DELETE_STORAGE_VALUE) {
+                unsetFields[`data.${key}`] = true;
                 continue;
             }
 
-            const nextData = {
-                ...(current.data ?? {})
-            };
-            for (const key of deletedKeys) {
-                delete nextData[key];
-            }
-
-            this.cacheStorage({
-                ...current,
-                data: nextData,
-                updatedAt: now,
-                version: (current.version ?? 0) + 1
-            });
-
-            return deletedKeys;
+            setFields[`data.${key}`] = value;
         }
 
-        throw new Error('Storage delete conflict, please retry');
+        const updateQuery: Record<string, any> = {
+            $set: setFields
+        };
+        if (Object.keys(unsetFields).length) {
+            updateQuery.$unset = unsetFields;
+        }
+
+        const result = await this.database.storages.update(
+            { userId: entitySnapshot.userId },
+            updateQuery
+        );
+
+        if (result.numAffected > 0) {
+            return;
+        }
+
+        const inserted = await this.database.storages.insert(entitySnapshot);
+        const currentState = this.stateByUserId.get(entitySnapshot.userId);
+        if (currentState?.entity && !currentState.entity._id) {
+            currentState.entity = {
+                ...currentState.entity,
+                _id: inserted._id ?? currentState.entity._id
+            };
+        }
+    }
+}
+
+function createStorageState(entity: StorageEntity | null): StorageState {
+    return {
+        entity,
+        pendingChanges: new Map()
+    };
+}
+
+function cloneStorage(entity: StorageEntity): StorageEntity {
+    return {
+        ...entity,
+        data: {
+            ...(entity.data ?? {})
+        }
+    };
+}
+
+function mergePendingChanges(
+    target: Map<string, PendingStorageValue>,
+    source: Map<string, PendingStorageValue>
+) {
+    for (const [key, value] of source) {
+        if (!target.has(key)) {
+            target.set(key, value);
+        }
     }
 }
 
@@ -295,14 +425,6 @@ function normalizeKeys(keys: string[]) {
     return keys.map(key => key.trim()).filter(Boolean);
 }
 
-function toStorageSetFields(save: Record<string, string>) {
-    return Object.fromEntries(
-        Object.entries(save).map(([key, value]) => [`data.${key}`, value] as const)
-    );
-}
-
-function toStorageUnsetFields(keys: string[]) {
-    return Object.fromEntries(
-        keys.map(key => [`data.${key}`, true] as const)
-    );
+function reportBackgroundFlushError(userId: string, error: unknown) {
+    console.error(`[StorageService] Failed to flush storage for user ${userId}`, error);
 }

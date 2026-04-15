@@ -41,6 +41,15 @@ npm run loadtest -- --no-start-server --host 127.0.0.1 --port 23414 --scenario s
 
 Supported scenarios: `profile`, `storage-save`, `storage-get`, `room-sync`, `mixed`
 
+### Storage write behavior
+`Storage/Save` now uses a write-back cache to improve throughput:
+
+- The API returns after data is accepted into the in-memory cache.
+- Repeated writes for the same account are merged and flushed to NeDB in batches.
+- `Storage/Get` and the admin panel read the latest cached value immediately.
+- A graceful server stop flushes pending storage writes before exit.
+- If the process crashes before the delayed flush runs, the newest unflushed writes may be lost.
+
 ### Generate API document
 
 Generate API document in swagger/openapi and markdown format.
