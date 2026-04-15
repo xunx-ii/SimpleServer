@@ -1,10 +1,10 @@
 export function renderAdminPage() {
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SimpleServer Admin</title>
+  <title>SimpleServer 管理后台</title>
   <style>
     :root {
       --bg: #f2efe8;
@@ -84,13 +84,13 @@ export function renderAdminPage() {
   <div class="page">
     <section id="loginView" class="login">
       <div class="card">
-        <h2>Admin Login</h2>
-        <p class="muted">Credentials come from local config.json.</p>
+        <h2>后台登录</h2>
+        <p class="muted">登录账号和密码来自本地 config.json。</p>
         <div id="loginBanner" class="banner"></div>
         <form id="loginForm">
-          <label class="field"><span>Username</span><input id="usernameInput" required autocomplete="username" /></label>
-          <label class="field"><span>Password</span><input id="passwordInput" required type="password" autocomplete="current-password" /></label>
-          <div class="toolbar" style="margin-top:16px;"><button class="primary" type="submit">Login</button></div>
+          <label class="field"><span>用户名</span><input id="usernameInput" required autocomplete="username" /></label>
+          <label class="field"><span>密码</span><input id="passwordInput" required type="password" autocomplete="current-password" /></label>
+          <div class="toolbar" style="margin-top:16px;"><button class="primary" type="submit">登录</button></div>
         </form>
       </div>
     </section>
@@ -98,12 +98,12 @@ export function renderAdminPage() {
     <section id="dashboardView" class="hidden">
       <div class="hero">
         <div>
-          <h1>SimpleServer Control Deck</h1>
-          <p class="muted">Monitor rooms, players, sessions and user storage from one local page.</p>
+          <h1>SimpleServer 控制台</h1>
+          <p class="muted">在一个本地页面中查看房间、玩家、会话和用户存储信息。</p>
         </div>
         <div class="toolbar">
-          <button id="refreshButton" class="ghost" type="button">Refresh</button>
-          <button id="logoutButton" class="danger" type="button">Logout</button>
+          <button id="refreshButton" class="ghost" type="button">刷新</button>
+          <button id="logoutButton" class="danger" type="button">退出登录</button>
         </div>
       </div>
       <div id="dashboardBanner" class="banner"></div>
@@ -112,21 +112,21 @@ export function renderAdminPage() {
 
       <section class="card section">
         <div class="section-head">
-          <div><h2>Rooms</h2><div class="muted">View state, kick players, or delete a room.</div></div>
+          <div><h2>房间</h2><div class="muted">查看房间状态、踢出玩家或删除房间。</div></div>
         </div>
         <div id="roomsContainer"></div>
       </section>
 
       <section class="card section">
         <div class="section-head">
-          <div><h2>Players</h2><div class="muted">Inspect player state and edit display names or storage.</div></div>
+          <div><h2>玩家</h2><div class="muted">查看玩家状态，并修改显示名或存储数据。</div></div>
         </div>
         <div id="playersContainer"></div>
       </section>
 
       <section class="card section">
         <div class="section-head">
-          <div><h2>Storages</h2><div class="muted">Inspect and patch user storage payloads.</div></div>
+          <div><h2>存储</h2><div class="muted">查看并修改用户存储内容。</div></div>
         </div>
         <div id="storagesContainer"></div>
       </section>
@@ -168,7 +168,7 @@ export function renderAdminPage() {
         }
       });
       if (!response.ok) {
-        setBanner(loginBanner, 'error', response.error || 'Login failed');
+        setBanner(loginBanner, 'error', response.error || '登录失败');
         return;
       }
       document.getElementById('passwordInput').value = '';
@@ -244,10 +244,10 @@ export function renderAdminPage() {
             refreshTimer = null;
           }
           showLogin();
-          setBanner(loginBanner, 'error', 'Session expired, please login again.');
+          setBanner(loginBanner, 'error', '登录状态已过期，请重新登录。');
           return;
         }
-        setBanner(dashboardBanner, 'error', response.error || 'Failed to load dashboard');
+        setBanner(dashboardBanner, 'error', response.error || '加载后台数据失败');
         return;
       }
       setBanner(dashboardBanner, '', '');
@@ -256,19 +256,19 @@ export function renderAdminPage() {
 
     function renderDashboard(data) {
       document.getElementById('statusStrip').innerHTML =
-        '<span><strong>WS:</strong> ' + esc(data.server.wsPort) + '</span>' +
-        '<span><strong>Admin:</strong> ' + esc(data.server.adminHost + ':' + data.server.adminPort) + '</span>' +
-        '<span><strong>Started:</strong> ' + esc(fmtDate(data.server.startedAt)) + '</span>' +
-        '<span><strong>Uptime:</strong> ' + esc(fmtDuration(data.server.uptimeMs)) + '</span>' +
-        '<span><strong>Connections:</strong> ' + esc(String(data.server.openConnections)) + ' opened / ' + esc(String(data.server.boundConnections)) + ' bound</span>';
+        '<span><strong>WS 端口:</strong> ' + esc(data.server.wsPort) + '</span>' +
+        '<span><strong>后台地址:</strong> ' + esc(data.server.adminHost + ':' + data.server.adminPort) + '</span>' +
+        '<span><strong>启动时间:</strong> ' + esc(fmtDate(data.server.startedAt)) + '</span>' +
+        '<span><strong>运行时长:</strong> ' + esc(fmtDuration(data.server.uptimeMs)) + '</span>' +
+        '<span><strong>连接数:</strong> ' + esc(String(data.server.openConnections)) + ' 已打开 / ' + esc(String(data.server.boundConnections)) + ' 已绑定</span>';
 
       var summary = document.getElementById('summaryGrid');
       summary.innerHTML = '';
-      addSummary(summary, 'Accounts', data.summary.accountCount);
-      addSummary(summary, 'Online Players', data.summary.onlinePlayerCount);
-      addSummary(summary, 'Active Rooms', data.summary.roomCount);
-      addSummary(summary, 'Storages', data.summary.storageCount);
-      addSummary(summary, 'Active Sessions', data.summary.sessionCount);
+      addSummary(summary, '账号数', data.summary.accountCount);
+      addSummary(summary, '在线玩家', data.summary.onlinePlayerCount);
+      addSummary(summary, '活跃房间', data.summary.roomCount);
+      addSummary(summary, '存储记录', data.summary.storageCount);
+      addSummary(summary, '活跃会话', data.summary.sessionCount);
 
       renderRooms(data.rooms);
       renderPlayers(data.players);
@@ -284,95 +284,95 @@ export function renderAdminPage() {
 
     function renderRooms(rooms) {
       if (!rooms.length) {
-        document.getElementById('roomsContainer').innerHTML = '<div class="muted">No active rooms.</div>';
+        document.getElementById('roomsContainer').innerHTML = '<div class="muted">当前没有活跃房间。</div>';
         return;
       }
       var rows = rooms.map(function (room) {
         var players = room.players.map(function (player) {
           return '<span class="pill ' + (player.isOnline ? '' : 'off') + '">' +
-            esc(player.displayName) + ' · ' + esc(player.isReady ? 'Ready' : 'Idle') + ' · ' + esc(player.isOnline ? 'Online' : 'Offline') +
+            esc(player.displayName) + ' · ' + esc(player.isReady ? '已准备' : '未准备') + ' · ' + esc(player.isOnline ? '在线' : '离线') +
             '</span>' +
-            '<button class="danger" type="button" data-action="kick-player" data-room-id="' + esc(room.roomId) + '" data-user-id="' + esc(player.userId) + '">Kick</button>';
+            '<button class="danger" type="button" data-action="kick-player" data-room-id="' + esc(room.roomId) + '" data-user-id="' + esc(player.userId) + '">踢出</button>';
         }).join('');
         return '<tr>' +
           '<td><div><strong>' + esc(room.name) + '</strong></div><div class="mono">' + esc(room.roomId) + '</div></td>' +
-          '<td>' + esc(room.state) + '<br/>Owner: <span class="mono">' + esc(room.ownerUserId) + '</span></td>' +
+          '<td>' + esc(formatRoomState(room.state)) + '<br/>房主: <span class="mono">' + esc(room.ownerUserId) + '</span></td>' +
           '<td><div class="stack">' + players + '</div></td>' +
-          '<td>Created: ' + esc(fmtDate(room.createdAt)) + '<br/>Updated: ' + esc(fmtDate(room.updatedAt)) + '<br/>Countdown: ' + esc(room.countdownEndAt ? fmtDate(room.countdownEndAt) : '-') + '</td>' +
-          '<td><button class="danger" type="button" data-action="dismiss-room" data-room-id="' + esc(room.roomId) + '">Delete Room</button></td>' +
+          '<td>创建: ' + esc(fmtDate(room.createdAt)) + '<br/>更新: ' + esc(fmtDate(room.updatedAt)) + '<br/>倒计时结束: ' + esc(room.countdownEndAt ? fmtDate(room.countdownEndAt) : '-') + '</td>' +
+          '<td><button class="danger" type="button" data-action="dismiss-room" data-room-id="' + esc(room.roomId) + '">删除房间</button></td>' +
           '</tr>';
       }).join('');
-      document.getElementById('roomsContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>Room</th><th>Status</th><th>Players</th><th>Timing</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      document.getElementById('roomsContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>房间</th><th>状态</th><th>玩家</th><th>时间</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     function renderPlayers(players) {
       if (!players.length) {
-        document.getElementById('playersContainer').innerHTML = '<div class="muted">No registered players.</div>';
+        document.getElementById('playersContainer').innerHTML = '<div class="muted">当前没有注册玩家。</div>';
         return;
       }
       var rows = players.map(function (player) {
         return '<tr>' +
-          '<td><div><strong>' + esc(player.displayName) + '</strong> (' + esc(player.username) + ')</div><div class="mono">' + esc(player.userId) + '</div><div>Created: ' + esc(fmtDate(player.createdAt)) + '</div><div>Last Login: ' + esc(fmtDate(player.lastLoginAt)) + '</div></td>' +
-          '<td>' + esc(player.isOnline ? 'Online' : 'Offline') + '<br/>Sessions: ' + esc(String(player.sessionCount)) + '</td>' +
+          '<td><div><strong>' + esc(player.displayName) + '</strong> (' + esc(player.username) + ')</div><div class="mono">' + esc(player.userId) + '</div><div>创建: ' + esc(fmtDate(player.createdAt)) + '</div><div>最近登录: ' + esc(fmtDate(player.lastLoginAt)) + '</div></td>' +
+          '<td>' + esc(player.isOnline ? '在线' : '离线') + '<br/>会话数: ' + esc(String(player.sessionCount)) + '</td>' +
           '<td>' + esc(player.roomId || '-') + '</td>' +
-          '<td>Keys: ' + esc(String(player.storageKeyCount)) + '<br/>Updated: ' + esc(player.storageUpdatedAt ? fmtDate(player.storageUpdatedAt) : '-') + '</td>' +
-          '<td><div class="stack"><button class="secondary" type="button" data-action="edit-display-name" data-user-id="' + esc(player.userId) + '" data-display-name="' + esc(player.displayName) + '">Edit Name</button><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(player.userId) + '">Save Storage</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(player.userId) + '">Delete Key</button></div></td>' +
+          '<td>键数量: ' + esc(String(player.storageKeyCount)) + '<br/>更新时间: ' + esc(player.storageUpdatedAt ? fmtDate(player.storageUpdatedAt) : '-') + '</td>' +
+          '<td><div class="stack"><button class="secondary" type="button" data-action="edit-display-name" data-user-id="' + esc(player.userId) + '" data-display-name="' + esc(player.displayName) + '">修改名称</button><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(player.userId) + '">写入存储</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(player.userId) + '">删除键</button></div></td>' +
           '</tr>';
       }).join('');
-      document.getElementById('playersContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>Player</th><th>Status</th><th>Room</th><th>Storage</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      document.getElementById('playersContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>玩家</th><th>状态</th><th>所在房间</th><th>存储</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     function renderStorages(storages) {
       if (!storages.length) {
-        document.getElementById('storagesContainer').innerHTML = '<div class="muted">No storage data yet.</div>';
+        document.getElementById('storagesContainer').innerHTML = '<div class="muted">当前还没有存储数据。</div>';
         return;
       }
       var rows = storages.map(function (storage) {
         return '<tr>' +
           '<td><div><strong>' + esc(storage.displayName || storage.username || storage.userId) + '</strong></div><div class="mono">' + esc(storage.userId) + '</div></td>' +
-          '<td>Keys: ' + esc(String(storage.keyCount)) + '<br/>Version: ' + esc(String(storage.version || 0)) + '<br/>Updated: ' + esc(fmtDate(storage.updatedAt)) + '</td>' +
+          '<td>键数量: ' + esc(String(storage.keyCount)) + '<br/>版本: ' + esc(String(storage.version || 0)) + '<br/>更新时间: ' + esc(fmtDate(storage.updatedAt)) + '</td>' +
           '<td><div class="code mono">' + esc(JSON.stringify(storage.data, null, 2)) + '</div></td>' +
-          '<td><div class="stack"><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(storage.userId) + '">Merge JSON</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(storage.userId) + '">Delete Key</button></div></td>' +
+          '<td><div class="stack"><button class="secondary" type="button" data-action="save-storage" data-user-id="' + esc(storage.userId) + '">合并 JSON</button><button class="ghost" type="button" data-action="delete-storage-key" data-user-id="' + esc(storage.userId) + '">删除键</button></div></td>' +
           '</tr>';
       }).join('');
-      document.getElementById('storagesContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>User</th><th>Meta</th><th>Data</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      document.getElementById('storagesContainer').innerHTML = '<div class="table-wrap"><table><thead><tr><th>用户</th><th>元信息</th><th>数据</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
     async function dismissRoom(roomId) {
-      if (!confirm('Delete room ' + roomId + '?')) return;
-      await handleAction(api('/admin/api/rooms/' + encodeURIComponent(roomId) + '/delete', { method: 'POST' }), 'Room deleted.');
+      if (!confirm('确认删除房间 ' + roomId + ' 吗？')) return;
+      await handleAction(api('/admin/api/rooms/' + encodeURIComponent(roomId) + '/delete', { method: 'POST' }), '房间已删除。');
     }
 
     async function kickPlayer(roomId, userId) {
-      if (!confirm('Kick player ' + userId + ' from room ' + roomId + '?')) return;
-      await handleAction(api('/admin/api/rooms/' + encodeURIComponent(roomId) + '/kick', { method: 'POST', body: { userId: userId } }), 'Player kicked.');
+      if (!confirm('确认将玩家 ' + userId + ' 从房间 ' + roomId + ' 中踢出吗？')) return;
+      await handleAction(api('/admin/api/rooms/' + encodeURIComponent(roomId) + '/kick', { method: 'POST', body: { userId: userId } }), '玩家已踢出。');
     }
 
     async function editDisplayName(userId, currentDisplayName) {
-      var nextDisplayName = prompt('New display name', currentDisplayName || '');
+      var nextDisplayName = prompt('请输入新的显示名称', currentDisplayName || '');
       if (nextDisplayName === null) return;
-      await handleAction(api('/admin/api/accounts/' + encodeURIComponent(userId) + '/display-name', { method: 'POST', body: { displayName: nextDisplayName } }), 'Display name updated.');
+      await handleAction(api('/admin/api/accounts/' + encodeURIComponent(userId) + '/display-name', { method: 'POST', body: { displayName: nextDisplayName } }), '显示名称已更新。');
     }
 
     async function saveStorage(userId) {
-      var raw = prompt('Enter JSON object to merge into storage', '{"key":"value"}');
+      var raw = prompt('请输入要合并到存储中的 JSON 对象', '{"key":"value"}');
       if (raw === null) return;
       var parsed;
       try { parsed = JSON.parse(raw); }
-      catch { setBanner(dashboardBanner, 'error', 'Invalid JSON payload'); return; }
-      await handleAction(api('/admin/api/storages/' + encodeURIComponent(userId) + '/save', { method: 'POST', body: { save: parsed } }), 'Storage updated.');
+      catch { setBanner(dashboardBanner, 'error', 'JSON 格式不正确'); return; }
+      await handleAction(api('/admin/api/storages/' + encodeURIComponent(userId) + '/save', { method: 'POST', body: { save: parsed } }), '存储已更新。');
     }
 
     async function deleteStorageKey(userId) {
-      var key = prompt('Storage key to delete');
+      var key = prompt('请输入要删除的存储键');
       if (key === null) return;
-      await handleAction(api('/admin/api/storages/' + encodeURIComponent(userId) + '/delete-key', { method: 'POST', body: { keys: [key] } }), 'Storage key deleted.');
+      await handleAction(api('/admin/api/storages/' + encodeURIComponent(userId) + '/delete-key', { method: 'POST', body: { keys: [key] } }), '存储键已删除。');
     }
 
     async function handleAction(responsePromise, successMessage) {
       var response = await responsePromise;
       if (!response.ok) {
-        setBanner(dashboardBanner, 'error', response.error || 'Action failed');
+        setBanner(dashboardBanner, 'error', response.error || '操作失败');
         return;
       }
       setBanner(dashboardBanner, 'ok', successMessage);
@@ -398,7 +398,7 @@ export function renderAdminPage() {
           ok: false,
           status: 0,
           data: null,
-          error: error instanceof Error ? error.message : 'Network request failed'
+          error: error instanceof Error ? error.message : '网络请求失败'
         };
       }
     }
@@ -420,7 +420,14 @@ export function renderAdminPage() {
       var hours = Math.floor(totalSeconds / 3600);
       var minutes = Math.floor((totalSeconds % 3600) / 60);
       var seconds = totalSeconds % 60;
-      return hours + 'h ' + minutes + 'm ' + seconds + 's';
+      return hours + '小时 ' + minutes + '分钟 ' + seconds + '秒';
+    }
+
+    function formatRoomState(state) {
+      if (state === 'open') return '开放中';
+      if (state === 'countdown') return '倒计时中';
+      if (state === 'playing') return '游戏中';
+      return state;
     }
 
     function esc(value) {
