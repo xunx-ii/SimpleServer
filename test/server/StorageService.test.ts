@@ -15,7 +15,7 @@ describe('StorageService', () => {
         }
     });
 
-    it('retries concurrent saves without losing keys', async () => {
+    it('serializes concurrent saves without losing keys', async () => {
         const server = new WsServer(serviceProto, {
             port: 0,
             json: true
@@ -31,28 +31,6 @@ describe('StorageService', () => {
             displayName: 'Storage Parallel User'
         });
 
-        const originalFindOne = appContext.database.storages.findOne.bind(appContext.database.storages);
-        let barrierRelease: (() => void) | undefined;
-        const barrier = new Promise<void>(resolve => {
-            barrierRelease = resolve;
-        });
-        let interceptedCalls = 0;
-
-        appContext.database.storages.findOne = async query => {
-            const snapshot = await originalFindOne(query);
-            interceptedCalls += 1;
-
-            if (interceptedCalls <= 2) {
-                if (interceptedCalls === 2) {
-                    barrierRelease?.();
-                }
-
-                await barrier;
-            }
-
-            return snapshot;
-        };
-
         const [firstSave, secondSave] = await Promise.all([
             appContext.storage.save(session.token, {
                 alpha: '1'
@@ -65,7 +43,7 @@ describe('StorageService', () => {
         assert.deepStrictEqual(new Set(firstSave), new Set(['alpha']));
         assert.deepStrictEqual(new Set(secondSave), new Set(['beta']));
 
-        const persisted = await originalFindOne({
+        const persisted = await appContext.database.storages.findOne({
             userId: session.user.userId
         }) as StorageEntity | null;
 
@@ -76,5 +54,42 @@ describe('StorageService', () => {
 
         assert.strictEqual(persisted.data.alpha, '1');
         assert.strictEqual(persisted.data.beta, '2');
+    });
+
+    it('reuses cached storage records for hot save and get paths', async () => {
+        const server = new WsServer(serviceProto, {
+            port: 0,
+            json: true
+        });
+        const appContext = await createAppContext(server, {
+            inMemoryDb: true,
+            sessionTtlMs: 2000
+        });
+        disposableContexts.push(appContext);
+        const session = await appContext.accounts.register({
+            username: 'storage_cache_user',
+            password: 'password123',
+            displayName: 'Storage Cache User'
+        });
+
+        let storageFindOneCount = 0;
+        const originalFindOne = appContext.database.storages.findOne.bind(appContext.database.storages);
+        appContext.database.storages.findOne = async query => {
+            storageFindOneCount += 1;
+            return originalFindOne(query);
+        };
+
+        const firstSave = await appContext.storage.save(session.token, {
+            alpha: '1'
+        });
+        const secondSave = await appContext.storage.save(session.token, {
+            beta: '2'
+        });
+        const alphaValue = await appContext.storage.get(session.token, 'alpha');
+
+        assert.deepStrictEqual(firstSave, ['alpha']);
+        assert.deepStrictEqual(secondSave, ['beta']);
+        assert.strictEqual(alphaValue, '1');
+        assert.strictEqual(storageFindOneCount, 1);
     });
 });
