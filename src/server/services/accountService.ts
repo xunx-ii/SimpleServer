@@ -16,6 +16,12 @@ type ConnectionSessionCache = {
     session: SessionEntity
 };
 
+export type AuthenticatedUserIdentity = {
+    userId: string
+    username: string
+    displayName: string
+};
+
 export class AccountService {
     private readonly sessionTtlMs: number;
     private readonly accountByUserId = new Map<string, AccountEntity>();
@@ -131,14 +137,38 @@ export class AccountService {
         return this.toUserProfile(account);
     }
 
-    async requireAccount(token: string, connId?: string) {
-        const normalizedToken = normalizeToken(token);
-        const session = connId
-            ? await this.requireSessionForConnection(normalizedToken, connId)
-            : await this.requireSession(normalizedToken);
+    async requireUserIdentity(token: string, connId?: string): Promise<AuthenticatedUserIdentity> {
+        const { normalizedToken, session } = await this.requireAuthenticatedSession(token, connId);
         if (connId) {
-            this.connections.bind(connId, session.userId);
-            this.cacheConnectionSession(connId, normalizedToken, session);
+            this.bindAuthenticatedConnection(connId, session.userId, normalizedToken, session);
+        }
+
+        const profile = this.profileByUserId.get(session.userId);
+        if (profile) {
+            return {
+                userId: profile.userId,
+                username: profile.username,
+                displayName: profile.displayName
+            };
+        }
+
+        const account = await this.getAccountEntityByUserId(session.userId);
+        if (!account) {
+            await this.deleteSession(session, normalizedToken);
+            throw new Error('Account not found');
+        }
+
+        return {
+            userId: account.userId,
+            username: account.username,
+            displayName: account.displayName
+        };
+    }
+
+    async requireAccount(token: string, connId?: string) {
+        const { normalizedToken, session } = await this.requireAuthenticatedSession(token, connId);
+        if (connId) {
+            this.bindAuthenticatedConnection(connId, session.userId, normalizedToken, session);
         }
 
         const account = await this.getAccountEntityByUserId(session.userId);
@@ -148,6 +178,18 @@ export class AccountService {
         }
 
         return account;
+    }
+
+    private async requireAuthenticatedSession(token: string, connId?: string) {
+        const normalizedToken = normalizeToken(token);
+        const session = connId
+            ? await this.requireSessionForConnection(normalizedToken, connId)
+            : await this.requireSession(normalizedToken);
+
+        return {
+            normalizedToken,
+            session
+        };
     }
 
     async getProfiles(userIds: string[]) {
@@ -399,6 +441,11 @@ export class AccountService {
             token,
             session
         });
+    }
+
+    private bindAuthenticatedConnection(connId: string, userId: string, token: string, session: SessionEntity) {
+        this.connections.bind(connId, userId);
+        this.cacheConnectionSession(connId, token, session);
     }
 
     private async deleteSession(session: SessionEntity, token?: string) {

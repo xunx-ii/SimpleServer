@@ -2,6 +2,7 @@ import { ServiceProto } from 'tsrpc-proto';
 import { ReqLogin, ResLogin } from './Account/PtlLogin';
 import { ReqProfile, ResProfile } from './Account/PtlProfile';
 import { ReqRegister, ResRegister } from './Account/PtlRegister';
+import { MsgClientSync } from './Room/MsgClientSync';
 import { MsgEvent } from './Room/MsgEvent';
 import { MsgSync } from './Room/MsgSync';
 import { ReqCreate, ResCreate } from './Room/PtlCreate';
@@ -71,13 +72,14 @@ export interface ServiceType {
         }
     },
     msg: {
+        "Room/ClientSync": MsgClientSync,
         "Room/Event": MsgEvent,
         "Room/Sync": MsgSync
     }
 }
 
 export const serviceProto: ServiceProto<ServiceType> = {
-    "version": 4,
+    "version": 5,
     "services": [
         {
             "id": 2,
@@ -93,6 +95,11 @@ export const serviceProto: ServiceProto<ServiceType> = {
             "id": 4,
             "name": "Account/Register",
             "type": "api"
+        },
+        {
+            "id": 17,
+            "name": "Room/ClientSync",
+            "type": "msg"
         },
         {
             "id": 11,
@@ -379,6 +386,43 @@ export const serviceProto: ServiceProto<ServiceType> = {
                         "type": "Reference",
                         "target": "../models/GameModels/AuthSession"
                     }
+                }
+            ]
+        },
+        "Room/MsgClientSync/MsgClientSync": {
+            "type": "Interface",
+            "extends": [
+                {
+                    "id": 0,
+                    "type": {
+                        "type": "Reference",
+                        "target": "base/AuthenticatedRequest"
+                    }
+                }
+            ],
+            "properties": [
+                {
+                    "id": 0,
+                    "name": "payload",
+                    "type": {
+                        "type": "String"
+                    }
+                },
+                {
+                    "id": 1,
+                    "name": "kind",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
+                },
+                {
+                    "id": 2,
+                    "name": "targetUserId",
+                    "type": {
+                        "type": "String"
+                    },
+                    "optional": true
                 }
             ]
         },

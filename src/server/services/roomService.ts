@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import { WsServer } from 'tsrpc';
+import { WsConnection, WsServer } from 'tsrpc';
+import { TransportDataUtil } from 'tsrpc-base-client';
 import { RoomEvent, RoomInfo, RoomPlayer, RoomSyncMessage } from '../../shared/models/GameModels';
 import { ServiceType } from '../../shared/protocols/serviceProto';
 import { ConnectionRegistry } from '../connectionRegistry';
@@ -30,16 +31,26 @@ type RoomRuntime = {
 };
 
 const COUNTDOWN_SECONDS = 3;
+const ROOM_SYNC_MAX_BUFFERED_BYTES = 256 * 1024;
 
 export class RoomService {
     private readonly rooms = new Map<string, RoomRuntime>();
     private readonly userIdToRoomId = new Map<string, string>();
+    private readonly roomSyncService = this.server.serviceMap.msgName2Service['Room/Sync'];
+    private readonly canUseFastSyncDispatch: boolean;
 
     constructor(
         private readonly server: WsServer<ServiceType>,
         private readonly accounts: AccountService,
         private readonly connections: ConnectionRegistry
     ) {
+        this.canUseFastSyncDispatch = !!this.roomSyncService
+            && !this.server.options.logMsg
+            && !this.server.options.debugBuf
+            && this.server.flows.preSendMsgFlow.nodes.length === 0
+            && this.server.flows.postSendMsgFlow.nodes.length === 0
+            && this.server.flows.preSendDataFlow.nodes.length === 0
+            && this.server.flows.preSendBufferFlow.nodes.length === 0;
     }
 
     dispose() {
@@ -199,38 +210,26 @@ export class RoomService {
         return this.toRoomInfo(room);
     }
 
+    async pushSync(token: string, input: {
+        payload: string
+        kind?: string
+        targetUserId?: string
+    }, connId?: string) {
+        const dispatch = await this.prepareSyncDispatch(token, input, connId);
+        this.sendSyncMessage(dispatch.deliveredUserIds, dispatch.message);
+    }
+
     async sync(token: string, input: {
         payload: string
         kind?: string
         targetUserId?: string
     }, connId?: string) {
-        const account = await this.accounts.requireAccount(token, connId);
-        const room = this.requireRoomByUserId(account.userId);
-        const targetUserId = input.targetUserId?.trim() || undefined;
-        const deliveredUserIds = targetUserId
-            ? [targetUserId]
-            : room.members.map(member => member.userId);
-
-        if (targetUserId && !room.members.some(member => member.userId === targetUserId)) {
-            throw new Error('Target user is not in the room');
-        }
-
-        const message: RoomSyncMessage = {
-            roomId: room.roomId,
-            fromUserId: account.userId,
-            fromUsername: account.username,
-            fromDisplayName: account.displayName,
-            toUserId: targetUserId ?? null,
-            kind: input.kind,
-            payload: input.payload,
-            sentAt: new Date()
-        };
-
-        await this.sendSyncMessage(deliveredUserIds, message);
+        const dispatch = await this.prepareSyncDispatch(token, input, connId);
+        this.sendSyncMessage(dispatch.deliveredUserIds, dispatch.message);
 
         return {
-            roomId: room.roomId,
-            deliveredUserIds
+            roomId: dispatch.roomId,
+            deliveredUserIds: dispatch.deliveredUserIds
         };
     }
 
@@ -502,13 +501,95 @@ export class RoomService {
         await this.server.broadcastMsg('Room/Event', message, conns);
     }
 
-    private async sendSyncMessage(userIds: string[], message: RoomSyncMessage) {
+    private sendSyncMessage(userIds: string[], message: RoomSyncMessage) {
         const conns = this.connections.getConnectionsByUserIds(userIds);
         if (!conns.length) {
             return;
         }
 
-        await this.server.broadcastMsg('Room/Sync', message, conns);
+        if (this.canUseFastSyncDispatch) {
+            this.fastBroadcastSync(conns, message);
+            return;
+        }
+
+        void this.server.broadcastMsg('Room/Sync', message, conns).then(result => {
+            if (!result.isSucc) {
+                reportRoomSyncDispatchError(result.errMsg);
+            }
+        }).catch(error => {
+            reportRoomSyncDispatchError(error);
+        });
+    }
+
+    private async prepareSyncDispatch(
+        token: string,
+        input: {
+            payload: string
+            kind?: string
+            targetUserId?: string
+        },
+        connId?: string
+    ) {
+        const sender = await this.accounts.requireUserIdentity(token, connId);
+        const room = this.requireRoomByUserId(sender.userId);
+        const targetUserId = input.targetUserId?.trim() || undefined;
+
+        if (targetUserId && !room.members.some(member => member.userId === targetUserId)) {
+            throw new Error('Target user is not in the room');
+        }
+
+        const deliveredUserIds = targetUserId
+            ? [targetUserId]
+            : room.members.map(member => member.userId);
+
+        return {
+            roomId: room.roomId,
+            deliveredUserIds,
+            message: {
+                roomId: room.roomId,
+                fromUserId: sender.userId,
+                fromUsername: sender.username,
+                fromDisplayName: sender.displayName,
+                toUserId: targetUserId ?? null,
+                kind: input.kind,
+                payload: input.payload,
+                sentAt: new Date()
+            } as RoomSyncMessage
+        };
+    }
+
+    private fastBroadcastSync(conns: WsConnection<ServiceType>[], message: RoomSyncMessage) {
+        const service = this.roomSyncService;
+        if (!service) {
+            throw new Error('Room sync message service is not configured');
+        }
+
+        let encodedText: string | undefined;
+        let encodedBuffer: Uint8Array | undefined;
+
+        for (const conn of conns) {
+            if (conn.ws.bufferedAmount > ROOM_SYNC_MAX_BUFFERED_BYTES) {
+                continue;
+            }
+
+            const encoded = conn.dataType === 'buffer'
+                ? getEncodedBufferSyncMessage(this.server, service, message, encoded => {
+                    encodedBuffer = encoded;
+                }, encodedBuffer)
+                : getEncodedTextSyncMessage(this.server, service, message, encoded => {
+                    encodedText = encoded;
+                }, encodedText);
+            try {
+                conn.ws.send(encoded, error => {
+                    if (error) {
+                        reportRoomSyncSendError(conn.id, error);
+                    }
+                });
+            }
+            catch (error) {
+                reportRoomSyncSendError(conn.id, error);
+            }
+        }
     }
 
     private async toRoomInfo(room: RoomRuntime): Promise<RoomInfo> {
@@ -541,6 +622,58 @@ export class RoomService {
     }
 }
 
+function getEncodedTextSyncMessage(
+    server: WsServer<ServiceType>,
+    service: any,
+    message: RoomSyncMessage,
+    cache: (encoded: string) => void,
+    cached?: string
+) {
+    if (cached) {
+        return cached;
+    }
+
+    const encoded = TransportDataUtil.encodeServerMsg(
+        server.tsbuffer,
+        service,
+        message,
+        'text',
+        'LONG'
+    );
+    if (!encoded.isSucc || typeof encoded.output !== 'string') {
+        throw new Error(encoded.isSucc ? 'Room sync text encoding failed' : encoded.errMsg);
+    }
+
+    cache(encoded.output);
+    return encoded.output;
+}
+
+function getEncodedBufferSyncMessage(
+    server: WsServer<ServiceType>,
+    service: any,
+    message: RoomSyncMessage,
+    cache: (encoded: Uint8Array) => void,
+    cached?: Uint8Array
+) {
+    if (cached) {
+        return cached;
+    }
+
+    const encoded = TransportDataUtil.encodeServerMsg(
+        server.tsbuffer,
+        service,
+        message,
+        'buffer',
+        'LONG'
+    );
+    if (!encoded.isSucc || !(encoded.output instanceof Uint8Array)) {
+        throw new Error(encoded.isSucc ? 'Room sync buffer encoding failed' : encoded.errMsg);
+    }
+
+    cache(encoded.output);
+    return encoded.output;
+}
+
 function normalizeRoomName(name: string) {
     const normalized = name.trim();
     if (normalized.length < 1 || normalized.length > 32) {
@@ -556,4 +689,12 @@ function normalizeMaxPlayers(maxPlayers: number) {
     }
 
     return maxPlayers;
+}
+
+function reportRoomSyncDispatchError(error: unknown) {
+    console.error('[RoomService] Failed to dispatch room sync message', error);
+}
+
+function reportRoomSyncSendError(connId: string, error: unknown) {
+    console.error(`[RoomService] Failed to send room sync message to connection ${connId}`, error);
 }

@@ -69,6 +69,19 @@ export async function createGameServer(options: {
 
     await server.autoImplementApi(path.resolve(__dirname, '../api'));
 
+    server.listenMsg('Room/ClientSync', async call => {
+        try {
+            await appContext.rooms.pushSync(call.msg.token, {
+                payload: call.msg.payload,
+                kind: call.msg.kind,
+                targetUserId: call.msg.targetUserId
+            }, call.conn.id);
+        }
+        catch (error) {
+            reportRoomClientSyncError(call.conn.id, error);
+        }
+    });
+
     let started = false;
 
     return {
@@ -107,4 +120,8 @@ export async function createGameServer(options: {
             clearAppContext(server);
         }
     };
+}
+
+function reportRoomClientSyncError(connId: string, error: unknown) {
+    console.error(`[GameServer] Failed to process Room/ClientSync from connection ${connId}`, error);
 }

@@ -5,7 +5,7 @@ import { WsClient } from 'tsrpc';
 import { createGameServer } from '../src';
 import { serviceProto, type ServiceType } from '../src/shared/protocols/serviceProto';
 
-type Scenario = 'profile' | 'storage-save' | 'storage-get' | 'room-sync' | 'mixed';
+type Scenario = 'profile' | 'storage-save' | 'storage-get' | 'room-sync' | 'room-sync-msg' | 'mixed';
 
 type CliOptions = {
     scenario: Scenario
@@ -89,7 +89,7 @@ async function main() {
         if (options.scenario === 'storage-get') {
             await setupStorage(users);
         }
-        if (options.scenario === 'room-sync' || options.scenario === 'mixed') {
+        if (options.scenario === 'room-sync' || options.scenario === 'room-sync-msg' || options.scenario === 'mixed') {
             await setupRooms(users, options.roomSize);
         }
 
@@ -104,10 +104,10 @@ async function main() {
         }
     }
     finally {
-        await Promise.allSettled(users.map(user => user.client.disconnect()));
         if (server) {
             await server.stop();
         }
+        await Promise.allSettled(users.map(user => withTimeout(user.client.disconnect(), 2000)));
     }
 }
 
@@ -281,6 +281,20 @@ async function performOperation(user: LoadTestUser, options: CliOptions, sequenc
         throw new Error(`Worker ${user.index} has no room for sync benchmark`);
     }
 
+    if (operation === 'room-sync-msg') {
+        const result = await user.client.sendMsg('Room/ClientSync', {
+            token: user.token,
+            kind: 'loadtest',
+            payload: JSON.stringify({
+                id: randomUUID(),
+                seq: sequence,
+                sender: user.index
+            })
+        });
+        ensureMsgSuccess(result, 'Room/ClientSync');
+        return operation;
+    }
+
     const result = await user.client.callApi('Room/Sync', {
         token: user.token,
         kind: 'loadtest',
@@ -306,7 +320,7 @@ function resolveScenario(scenario: Scenario): Scenario {
     if (roll < 0.8) {
         return 'storage-save';
     }
-    return 'room-sync';
+    return 'room-sync-msg';
 }
 
 function ensureApiSuccess(
@@ -317,6 +331,19 @@ function ensureApiSuccess(
 ) {
     if (!result.isSucc) {
         throw new Error(`${apiName} failed: ${result.err.message}`);
+    }
+}
+
+function ensureMsgSuccess(
+    result:
+        | { isSucc: true }
+        | { isSucc: false, errMsg: string }
+        | { isSucc: false, err: { message: string } },
+    msgName: string
+) {
+    if (!result.isSucc) {
+        const errorMessage = 'errMsg' in result ? result.errMsg : result.err.message;
+        throw new Error(`${msgName} failed: ${errorMessage}`);
     }
 }
 
@@ -472,6 +499,7 @@ function getScenarioArg(input: string | boolean | undefined): Scenario {
         || input === 'storage-save'
         || input === 'storage-get'
         || input === 'room-sync'
+        || input === 'room-sync-msg'
         || input === 'mixed') {
         return input;
     }
@@ -535,6 +563,17 @@ async function getAvailablePort(host: string) {
             });
         });
     });
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+    return Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+            setTimeout(() => {
+                reject(new Error(`Operation timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
+        })
+    ]);
 }
 
 main().catch(error => {

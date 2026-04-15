@@ -394,6 +394,30 @@ describe.sequential('AccountAndRoom', () => {
         assert.strictEqual(bobDirect.toUserId, bobUserId);
         assert.strictEqual(aliceSyncs.length, 0);
         assert.strictEqual(carolSyncs.length, 0);
+
+        aliceSyncs.length = 0;
+        bobSyncs.length = 0;
+
+        const pushed = await aliceClient.sendMsg('Room/ClientSync', {
+            token: aliceToken,
+            kind: 'msg_fast',
+            payload: '{"tick":1}'
+        });
+        assert.ok(pushed.isSucc);
+        if (!pushed.isSucc) {
+            return;
+        }
+
+        const aliceFast = await waitFor(() => {
+            return aliceSyncs.find(message => message.kind === 'msg_fast');
+        });
+        const bobFast = await waitFor(() => {
+            return bobSyncs.find(message => message.kind === 'msg_fast');
+        });
+
+        assert.strictEqual(aliceFast.toUserId, null);
+        assert.strictEqual(bobFast.toUserId, null);
+        assert.strictEqual(carolSyncs.length, 0);
     });
 
     it('removes disconnected players and deletes empty temporary rooms', async () => {
