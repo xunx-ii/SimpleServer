@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import { AuthSession, UserProfile } from '../../shared/models/GameModels';
 import { ConnectionRegistry } from '../connectionRegistry';
 import { Database } from '../database';
-import { AccountEntity } from '../models';
+import { AccountEntity, SessionEntity } from '../models';
 
 const scrypt = promisify(scryptCallback);
 const PASSWORD_HASH_PREFIX = 'scrypt_v1';
@@ -13,6 +13,9 @@ const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 export class AccountService {
     private readonly sessionTtlMs: number;
+    private readonly accountByUserId = new Map<string, AccountEntity>();
+    private readonly userIdByUsername = new Map<string, string>();
+    private readonly sessionByTokenHash = new Map<string, SessionEntity>();
 
     constructor(
         private readonly database: Database,
@@ -27,6 +30,12 @@ export class AccountService {
         }
     }
 
+    dispose() {
+        this.accountByUserId.clear();
+        this.userIdByUsername.clear();
+        this.sessionByTokenHash.clear();
+    }
+
     async register(
         input: {
             username: string
@@ -39,7 +48,7 @@ export class AccountService {
         validatePassword(input.password);
         const displayName = normalizeDisplayName(input.displayName, username);
 
-        const exists = await this.database.accounts.findOne({ username });
+        const exists = await this.getAccountEntityByUsername(username);
         if (exists) {
             throw new Error('Username already exists');
         }
@@ -68,7 +77,7 @@ export class AccountService {
         connId?: string
     ) {
         const username = normalizeUsername(input.username);
-        const account = await this.database.accounts.findOne({ username });
+        const account = await this.getAccountEntityByUsername(username);
         if (!account) {
             throw new Error('Account not found');
         }
@@ -90,11 +99,14 @@ export class AccountService {
             }
         );
 
-        return this.createSession({
+        const updatedAccount = {
             ...account,
             passwordHash: updatedPasswordHash,
             lastLoginAt: now
-        }, connId);
+        };
+        this.cacheAccount(updatedAccount);
+
+        return this.createSession(updatedAccount, connId);
     }
 
     async getProfile(token: string, connId?: string) {
@@ -108,9 +120,10 @@ export class AccountService {
             this.connections.bind(connId, session.userId);
         }
 
-        const account = await this.database.accounts.findOne({ userId: session.userId });
+        const account = await this.getAccountEntityByUserId(session.userId);
         if (!account) {
             await this.database.sessions.remove({ tokenHash: session.tokenHash });
+            this.sessionByTokenHash.delete(session.tokenHash);
             throw new Error('Account not found');
         }
 
@@ -119,11 +132,28 @@ export class AccountService {
 
     async getProfiles(userIds: string[]) {
         const profiles = new Map<string, UserProfile>();
+        const missingUserIds: string[] = [];
 
         for (const userId of Array.from(new Set(userIds))) {
-            const account = await this.database.accounts.findOne({ userId });
-            if (account) {
-                profiles.set(userId, this.toUserProfile(account));
+            const cached = this.accountByUserId.get(userId);
+            if (cached) {
+                profiles.set(userId, this.toUserProfile(cached));
+                continue;
+            }
+
+            missingUserIds.push(userId);
+        }
+
+        if (missingUserIds.length) {
+            const accounts = await this.database.accounts.findMany({
+                userId: {
+                    $in: missingUserIds
+                }
+            });
+
+            for (const account of accounts) {
+                this.cacheAccount(account);
+                profiles.set(account.userId, this.toUserProfile(account));
             }
         }
 
@@ -132,22 +162,23 @@ export class AccountService {
 
     async listUsers() {
         const accounts = await this.database.accounts.findMany({});
+        for (const account of accounts) {
+            this.cacheAccount(account);
+        }
         return accounts
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
             .map(account => this.toUserProfile(account));
     }
 
     async getUser(userId: string) {
-        const account = await this.database.accounts.findOne({
-            userId: normalizeUserId(userId)
-        });
+        const account = await this.getAccountEntityByUserId(normalizeUserId(userId));
 
         return account ? this.toUserProfile(account) : null;
     }
 
     async updateDisplayName(userId: string, displayName: string) {
         const normalizedUserId = normalizeUserId(userId);
-        const account = await this.database.accounts.findOne({ userId: normalizedUserId });
+        const account = await this.getAccountEntityByUserId(normalizedUserId);
         if (!account) {
             throw new Error('Account not found');
         }
@@ -162,10 +193,13 @@ export class AccountService {
             }
         );
 
-        return this.toUserProfile({
+        const updatedAccount = {
             ...account,
             displayName: normalizedDisplayName
-        });
+        };
+        this.cacheAccount(updatedAccount);
+
+        return this.toUserProfile(updatedAccount);
     }
 
     async listActiveSessionCounts() {
@@ -198,13 +232,16 @@ export class AccountService {
     private async createSession(account: AccountEntity, connId?: string): Promise<AuthSession> {
         const token = randomUUID();
         const now = new Date();
-        await this.database.sessions.insert({
+        const session: SessionEntity = {
             tokenHash: hashToken(token),
             userId: account.userId,
             createdAt: now,
             lastSeenAt: now,
             expiresAt: new Date(now.getTime() + this.sessionTtlMs)
-        });
+        };
+        await this.database.sessions.insert(session);
+        this.cacheAccount(account);
+        this.cacheSession(session);
 
         if (connId) {
             this.connections.bind(connId, account.userId);
@@ -223,30 +260,90 @@ export class AccountService {
         }
 
         const tokenHash = hashToken(normalizedToken);
+        const cachedSession = this.sessionByTokenHash.get(tokenHash);
+        if (cachedSession) {
+            return this.ensureSessionValidity(cachedSession);
+        }
+
         const session = await this.database.sessions.findOne({ tokenHash });
         if (!session) {
             throw new Error('Auth token expired or invalid');
         }
 
+        this.cacheSession(session);
+        return this.ensureSessionValidity(session);
+    }
+
+    private async ensureSessionValidity(session: SessionEntity) {
         const now = new Date();
         if (session.expiresAt.getTime() <= now.getTime()) {
-            await this.database.sessions.remove({ tokenHash });
+            await this.database.sessions.remove({ tokenHash: session.tokenHash });
+            this.sessionByTokenHash.delete(session.tokenHash);
             throw new Error('Auth token expired or invalid');
         }
 
         if (now.getTime() - session.lastSeenAt.getTime() >= Math.min(this.sessionTtlMs, SESSION_TOUCH_INTERVAL_MS)) {
+            const updatedSession: SessionEntity = {
+                ...session,
+                lastSeenAt: now,
+                expiresAt: new Date(now.getTime() + this.sessionTtlMs)
+            };
             await this.database.sessions.update(
-                { tokenHash },
+                { tokenHash: session.tokenHash },
                 {
                     $set: {
-                        lastSeenAt: now,
-                        expiresAt: new Date(now.getTime() + this.sessionTtlMs)
+                        lastSeenAt: updatedSession.lastSeenAt,
+                        expiresAt: updatedSession.expiresAt
                     }
                 }
             );
+            this.cacheSession(updatedSession);
+            return updatedSession;
         }
 
         return session;
+    }
+
+    private async getAccountEntityByUsername(username: string) {
+        const cachedUserId = this.userIdByUsername.get(username);
+        if (cachedUserId) {
+            const cachedAccount = this.accountByUserId.get(cachedUserId);
+            if (cachedAccount) {
+                return cachedAccount;
+            }
+
+            this.userIdByUsername.delete(username);
+        }
+
+        const account = await this.database.accounts.findOne({ username });
+        if (account) {
+            this.cacheAccount(account);
+        }
+
+        return account;
+    }
+
+    private async getAccountEntityByUserId(userId: string) {
+        const cachedAccount = this.accountByUserId.get(userId);
+        if (cachedAccount) {
+            return cachedAccount;
+        }
+
+        const account = await this.database.accounts.findOne({ userId });
+        if (account) {
+            this.cacheAccount(account);
+        }
+
+        return account;
+    }
+
+    private cacheAccount(account: AccountEntity) {
+        this.accountByUserId.set(account.userId, account);
+        this.userIdByUsername.set(account.username, account.userId);
+    }
+
+    private cacheSession(session: SessionEntity) {
+        this.sessionByTokenHash.set(session.tokenHash, session);
     }
 
     private toUserProfile(account: AccountEntity): UserProfile {

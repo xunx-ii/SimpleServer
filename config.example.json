@@ -3,7 +3,14 @@
     "port": 23414,
     "dataDir": ".data",
     "inMemoryDb": false,
-    "sessionTtlMs": 2592000000
+    "sessionTtlMs": 2592000000,
+    "logging": {
+      "logLevel": "info",
+      "logReqBody": false,
+      "logResBody": false,
+      "logMsg": false,
+      "logConnect": false
+    }
   },
   "admin": {
     "enabled": true,

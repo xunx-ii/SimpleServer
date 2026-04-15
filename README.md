@@ -13,6 +13,10 @@ Runtime settings are loaded from local `config.json`. If it is absent, the serve
 
 The admin web panel is enabled by default and listens on the `admin.port` from config.
 
+For better throughput, the server now defaults to lightweight logging:
+`server.logging.logReqBody=false`, `logResBody=false`, `logMsg=false`, `logConnect=false`.
+You can override these fields in `config.json` when you need more diagnostics.
+
 ### Build
 ```
 npm run build

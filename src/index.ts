@@ -10,6 +10,7 @@ async function main() {
         dataDir: config.server.dataDir,
         inMemoryDb: config.server.inMemoryDb,
         sessionTtlMs: config.server.sessionTtlMs,
+        logging: config.server.logging,
         admin: config.admin
     });
     await gameServer.start();

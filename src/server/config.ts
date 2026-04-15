@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import type { GameServerLoggingOptions } from './createGameServer';
 
 export interface AdminServerConfig {
     enabled?: boolean
@@ -16,6 +17,7 @@ export interface LocalAppConfig {
         dataDir?: string
         inMemoryDb?: boolean
         sessionTtlMs?: number
+        logging?: GameServerLoggingOptions
     }
     admin?: AdminServerConfig
 }
@@ -25,7 +27,14 @@ const DEFAULT_CONFIG: Required<LocalAppConfig> = {
         port: 23414,
         dataDir: '.data',
         inMemoryDb: false,
-        sessionTtlMs: 30 * 24 * 60 * 60 * 1000
+        sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
+        logging: {
+            logLevel: 'info',
+            logReqBody: false,
+            logResBody: false,
+            logMsg: false,
+            logConnect: false
+        }
     },
     admin: {
         enabled: true,
@@ -45,7 +54,11 @@ export async function loadLocalConfig() {
     return {
         server: {
             ...DEFAULT_CONFIG.server,
-            ...parsed.server
+            ...parsed.server,
+            logging: {
+                ...DEFAULT_CONFIG.server.logging,
+                ...parsed.server?.logging
+            }
         },
         admin: {
             ...DEFAULT_CONFIG.admin,

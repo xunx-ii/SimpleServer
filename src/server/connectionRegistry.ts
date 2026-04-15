@@ -1,14 +1,23 @@
-import { ConnectionStatus, WsServer } from 'tsrpc';
+import { ConnectionStatus, WsConnection, WsServer } from 'tsrpc';
 import { ServiceType } from '../shared/protocols/serviceProto';
 
 export class ConnectionRegistry {
+    private readonly connIdToConn = new Map<string, WsConnection<ServiceType>>();
     private readonly connIdToUserId = new Map<string, string>();
     private readonly userIdToConnIds = new Map<string, Set<string>>();
 
     constructor(private readonly server: WsServer<ServiceType>) {
     }
 
+    registerConnection(conn: WsConnection<ServiceType>) {
+        this.connIdToConn.set(conn.id, conn);
+    }
+
     bind(connId: string, userId: string) {
+        if (this.connIdToUserId.get(connId) === userId) {
+            return;
+        }
+
         this.unbind(connId);
         this.connIdToUserId.set(connId, userId);
 
@@ -19,6 +28,11 @@ export class ConnectionRegistry {
         }
 
         connIds.add(connId);
+    }
+
+    unregisterConnection(connId: string) {
+        this.connIdToConn.delete(connId);
+        return this.unbind(connId);
     }
 
     unbind(connId: string) {
@@ -46,14 +60,7 @@ export class ConnectionRegistry {
     }
 
     isUserOnline(userId: string) {
-        const connIds = this.userIdToConnIds.get(userId);
-        if (!connIds?.size) {
-            return false;
-        }
-
-        return this.server.connections.some(conn => {
-            return connIds.has(conn.id) && conn.status === ConnectionStatus.Opened;
-        });
+        return !!this.userIdToConnIds.get(userId)?.size;
     }
 
     getConnectionsByUserIds(userIds: Iterable<string>) {
@@ -62,17 +69,35 @@ export class ConnectionRegistry {
             return [];
         }
 
-        return this.server.connections.filter(conn => {
-            const userId = this.connIdToUserId.get(conn.id);
-            return !!userId
-                && userIdSet.has(userId)
-                && conn.status === ConnectionStatus.Opened;
-        });
+        const connections: WsConnection<ServiceType>[] = [];
+        const seenConnIds = new Set<string>();
+
+        for (const userId of userIdSet) {
+            const connIds = this.userIdToConnIds.get(userId);
+            if (!connIds?.size) {
+                continue;
+            }
+
+            for (const connId of connIds) {
+                if (seenConnIds.has(connId)) {
+                    continue;
+                }
+
+                const conn = this.connIdToConn.get(connId);
+                if (!conn || conn.status !== ConnectionStatus.Opened) {
+                    continue;
+                }
+
+                seenConnIds.add(connId);
+                connections.push(conn);
+            }
+        }
+
+        return connections;
     }
 
     getOnlineUserIds() {
-        return Array.from(this.userIdToConnIds.keys())
-            .filter(userId => this.isUserOnline(userId));
+        return Array.from(this.userIdToConnIds.keys());
     }
 
     getBoundConnectionCount() {
@@ -80,10 +105,11 @@ export class ConnectionRegistry {
     }
 
     getOpenedConnectionCount() {
-        return this.server.connections.filter(conn => conn.status === ConnectionStatus.Opened).length;
+        return this.connIdToConn.size;
     }
 
     clear() {
+        this.connIdToConn.clear();
         this.connIdToUserId.clear();
         this.userIdToConnIds.clear();
     }

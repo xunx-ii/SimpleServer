@@ -1,9 +1,17 @@
 import * as path from 'path';
-import { WsServer } from 'tsrpc';
+import { WsServer, type LogLevel, type WsConnection } from 'tsrpc';
 import { serviceProto, ServiceType } from '../shared/protocols/serviceProto';
 import { createAdminServer } from './admin/createAdminServer';
 import { AdminServerConfig } from './config';
 import { clearAppContext, createAppContext, setAppContext } from './context';
+
+export interface GameServerLoggingOptions {
+    logLevel?: LogLevel
+    logReqBody?: boolean
+    logResBody?: boolean
+    logMsg?: boolean
+    logConnect?: boolean
+}
 
 export interface GameServerInstance {
     server: WsServer<ServiceType>
@@ -18,11 +26,17 @@ export async function createGameServer(options: {
     inMemoryDb?: boolean
     sessionTtlMs?: number
     admin?: AdminServerConfig
+    logging?: GameServerLoggingOptions
 } = {}): Promise<GameServerInstance> {
     const wsPort = options.port ?? Number(process.env.PORT ?? 23414);
     const server = new WsServer(serviceProto, {
         port: wsPort,
-        json: true
+        json: true,
+        logLevel: options.logging?.logLevel ?? 'info',
+        logReqBody: options.logging?.logReqBody ?? false,
+        logResBody: options.logging?.logResBody ?? false,
+        logMsg: options.logging?.logMsg ?? false,
+        logConnect: options.logging?.logConnect ?? false
     });
 
     const appContext = await createAppContext(server, {
@@ -38,8 +52,13 @@ export async function createGameServer(options: {
             wsPort
         });
 
+    server.flows.postConnectFlow.push(flowData => {
+        appContext.connections.registerConnection(flowData as WsConnection<ServiceType>);
+        return flowData;
+    });
+
     server.flows.postDisconnectFlow.push(async flowData => {
-        const userId = appContext.connections.unbind(flowData.conn.id);
+        const userId = appContext.connections.unregisterConnection(flowData.conn.id);
         if (userId && !appContext.connections.isUserOnline(userId)) {
             await appContext.rooms.handleUserOffline(userId);
         }
@@ -81,6 +100,7 @@ export async function createGameServer(options: {
             }
 
             appContext.rooms.dispose();
+            appContext.accounts.dispose();
             appContext.connections.clear();
             clearAppContext(server);
         }
