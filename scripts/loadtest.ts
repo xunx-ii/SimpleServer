@@ -5,7 +5,7 @@ import { WsClient } from 'tsrpc';
 import { createGameServer } from '../src';
 import { serviceProto, type ServiceType } from '../src/shared/protocols/serviceProto';
 
-type Scenario = 'profile' | 'storage-save' | 'room-sync' | 'mixed';
+type Scenario = 'profile' | 'storage-save' | 'storage-get' | 'room-sync' | 'mixed';
 
 type CliOptions = {
     scenario: Scenario
@@ -86,6 +86,9 @@ async function main() {
         }
 
         await setupUsers(users, wsUrl, options);
+        if (options.scenario === 'storage-get') {
+            await setupStorage(users);
+        }
         if (options.scenario === 'room-sync' || options.scenario === 'mixed') {
             await setupRooms(users, options.roomSize);
         }
@@ -175,6 +178,23 @@ async function setupRooms(users: LoadTestUser[], roomSize: number) {
     }
 }
 
+async function setupStorage(users: LoadTestUser[]) {
+    for (const user of users) {
+        const seed: Record<string, string> = {};
+        for (let i = 0; i < 16; ++i) {
+            seed[`hot_${i}`] = `${user.index}:seed:${i}`;
+        }
+
+        const result = await user.client.callApi('Storage/Save', {
+            token: user.token,
+            save: seed
+        });
+        if (!result.isSucc) {
+            throw new Error(`Failed to seed storage for worker ${user.index}: ${result.err.message}`);
+        }
+    }
+}
+
 async function runLoadTest(users: LoadTestUser[], options: CliOptions) {
     const warmupEndsAt = performance.now() + options.warmupMs;
     const benchmarkEndsAt = warmupEndsAt + options.durationMs;
@@ -244,6 +264,16 @@ async function performOperation(user: LoadTestUser, options: CliOptions, sequenc
             }
         });
         ensureApiSuccess(result, 'Storage/Save');
+        return operation;
+    }
+
+    if (operation === 'storage-get') {
+        const key = `hot_${sequence % 16}`;
+        const result = await user.client.callApi('Storage/Get', {
+            token: user.token,
+            key
+        });
+        ensureApiSuccess(result, 'Storage/Get');
         return operation;
     }
 
@@ -438,7 +468,11 @@ function getScenarioArg(input: string | boolean | undefined): Scenario {
         return 'mixed';
     }
 
-    if (input === 'profile' || input === 'storage-save' || input === 'room-sync' || input === 'mixed') {
+    if (input === 'profile'
+        || input === 'storage-save'
+        || input === 'storage-get'
+        || input === 'room-sync'
+        || input === 'mixed') {
         return input;
     }
 

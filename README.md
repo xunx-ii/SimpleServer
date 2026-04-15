@@ -33,11 +33,13 @@ Examples:
 
 ```shell
 npm run loadtest -- --scenario profile --clients 64 --duration 20 --warmup 5
+npm run loadtest -- --scenario storage-get --clients 128 --duration 20 --warmup 5
+npm run loadtest -- --scenario storage-save --clients 128 --duration 20 --warmup 5
 npm run loadtest -- --scenario room-sync --clients 40 --room-size 4
 npm run loadtest -- --no-start-server --host 127.0.0.1 --port 23414 --scenario storage-save
 ```
 
-Supported scenarios: `profile`, `storage-save`, `room-sync`, `mixed`
+Supported scenarios: `profile`, `storage-save`, `storage-get`, `room-sync`, `mixed`
 
 ### Generate API document
 
