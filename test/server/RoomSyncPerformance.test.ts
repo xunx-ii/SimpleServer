@@ -60,15 +60,11 @@ describe('RoomSyncPerformance', () => {
             }, 'room-sync-fast-1');
             await rooms.joinRoom(bobSession.token, createdRoom.roomId, 'room-sync-fast-2');
 
-            const result = await rooms.sync(aliceSession.token, {
+            await rooms.sync(aliceSession.token, {
                 kind: 'state',
                 payload: '{"hp":100}'
             }, 'room-sync-fast-1');
 
-            assert.deepStrictEqual(new Set(result.deliveredUserIds), new Set([
-                aliceSession.user.userId,
-                bobSession.user.userId
-            ]));
             assert.strictEqual(aliceSends.length, 1);
             assert.strictEqual(bobSends.length, 1);
             assert.strictEqual(roomSyncBroadcastCalls, 0);
@@ -126,15 +122,11 @@ describe('RoomSyncPerformance', () => {
             }, 'room-sync-drop-1');
             await rooms.joinRoom(bobSession.token, createdRoom.roomId, 'room-sync-drop-2');
 
-            const result = await rooms.sync(aliceSession.token, {
+            await rooms.sync(aliceSession.token, {
                 kind: 'state',
                 payload: '{"hp":90}'
             }, 'room-sync-drop-1');
 
-            assert.deepStrictEqual(new Set(result.deliveredUserIds), new Set([
-                aliceSession.user.userId,
-                bobSession.user.userId
-            ]));
             assert.strictEqual(fastConnSends.length, 1);
             assert.strictEqual(slowConnSends.length, 0);
         }

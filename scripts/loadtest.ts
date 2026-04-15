@@ -5,7 +5,7 @@ import { WsClient } from 'tsrpc';
 import { createGameServer } from '../src';
 import { serviceProto, type ServiceType } from '../src/shared/protocols/serviceProto';
 
-type Scenario = 'profile' | 'storage-save' | 'storage-get' | 'room-sync' | 'room-sync-msg' | 'mixed';
+type Scenario = 'profile' | 'storage-save' | 'storage-get' | 'room-sync-msg' | 'mixed';
 
 type CliOptions = {
     scenario: Scenario
@@ -89,7 +89,7 @@ async function main() {
         if (options.scenario === 'storage-get') {
             await setupStorage(users);
         }
-        if (options.scenario === 'room-sync' || options.scenario === 'room-sync-msg' || options.scenario === 'mixed') {
+        if (options.scenario === 'room-sync-msg' || options.scenario === 'mixed') {
             await setupRooms(users, options.roomSize);
         }
 
@@ -281,21 +281,7 @@ async function performOperation(user: LoadTestUser, options: CliOptions, sequenc
         throw new Error(`Worker ${user.index} has no room for sync benchmark`);
     }
 
-    if (operation === 'room-sync-msg') {
-        const result = await user.client.sendMsg('Room/ClientSync', {
-            token: user.token,
-            kind: 'loadtest',
-            payload: JSON.stringify({
-                id: randomUUID(),
-                seq: sequence,
-                sender: user.index
-            })
-        });
-        ensureMsgSuccess(result, 'Room/ClientSync');
-        return operation;
-    }
-
-    const result = await user.client.callApi('Room/Sync', {
+    const result = await user.client.sendMsg('Room/ClientSync', {
         token: user.token,
         kind: 'loadtest',
         payload: JSON.stringify({
@@ -304,7 +290,7 @@ async function performOperation(user: LoadTestUser, options: CliOptions, sequenc
             sender: user.index
         })
     });
-    ensureApiSuccess(result, 'Room/Sync');
+    ensureMsgSuccess(result, 'Room/ClientSync');
     return operation;
 }
 
@@ -498,7 +484,6 @@ function getScenarioArg(input: string | boolean | undefined): Scenario {
     if (input === 'profile'
         || input === 'storage-save'
         || input === 'storage-get'
-        || input === 'room-sync'
         || input === 'room-sync-msg'
         || input === 'mixed') {
         return input;

@@ -349,7 +349,7 @@ describe.sequential('AccountAndRoom', () => {
     });
 
     it('syncs messages to the whole room or a single player', async () => {
-        const broadcast = await aliceClient.callApi('Room/Sync', {
+        const broadcast = await aliceClient.sendMsg('Room/ClientSync', {
             token: aliceToken,
             kind: 'state',
             payload: '{"hp":100}'
@@ -358,8 +358,6 @@ describe.sequential('AccountAndRoom', () => {
         if (!broadcast.isSucc) {
             return;
         }
-
-        assert.deepStrictEqual(new Set(broadcast.res.deliveredUserIds), new Set([aliceUserId, bobUserId]));
 
         const aliceBroadcast = await waitFor(() => {
             return aliceSyncs.find(message => message.kind === 'state');
@@ -375,7 +373,7 @@ describe.sequential('AccountAndRoom', () => {
         aliceSyncs.length = 0;
         bobSyncs.length = 0;
 
-        const direct = await aliceClient.callApi('Room/Sync', {
+        const direct = await aliceClient.sendMsg('Room/ClientSync', {
             token: aliceToken,
             kind: 'private',
             payload: '{"target":"bob"}',
@@ -385,8 +383,6 @@ describe.sequential('AccountAndRoom', () => {
         if (!direct.isSucc) {
             return;
         }
-
-        assert.deepStrictEqual(direct.res.deliveredUserIds, [bobUserId]);
 
         const bobDirect = await waitFor(() => {
             return bobSyncs.find(message => message.kind === 'private');

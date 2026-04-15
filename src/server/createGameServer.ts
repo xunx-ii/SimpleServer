@@ -71,7 +71,7 @@ export async function createGameServer(options: {
 
     server.listenMsg('Room/ClientSync', async call => {
         try {
-            await appContext.rooms.pushSync(call.msg.token, {
+            await appContext.rooms.sync(call.msg.token, {
                 payload: call.msg.payload,
                 kind: call.msg.kind,
                 targetUserId: call.msg.targetUserId

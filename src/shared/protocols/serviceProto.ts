@@ -12,7 +12,6 @@ import { ReqLeave, ResLeave } from './Room/PtlLeave';
 import { ReqList, ResList } from './Room/PtlList';
 import { ReqMy, ResMy } from './Room/PtlMy';
 import { ReqSetReady, ResSetReady } from './Room/PtlSetReady';
-import { ReqSync, ResSync } from './Room/PtlSync';
 import { ReqGet as ReqGet_1, ResGet as ResGet_1 } from './Storage/PtlGet';
 import { ReqSave, ResSave } from './Storage/PtlSave';
 
@@ -58,10 +57,6 @@ export interface ServiceType {
             req: ReqSetReady,
             res: ResSetReady
         },
-        "Room/Sync": {
-            req: ReqSync,
-            res: ResSync
-        },
         "Storage/Get": {
             req: ReqGet_1,
             res: ResGet_1
@@ -79,7 +74,7 @@ export interface ServiceType {
 }
 
 export const serviceProto: ServiceProto<ServiceType> = {
-    "version": 5,
+    "version": 6,
     "services": [
         {
             "id": 2,
@@ -144,11 +139,6 @@ export const serviceProto: ServiceProto<ServiceType> = {
         {
             "id": 13,
             "name": "Room/SetReady",
-            "type": "api"
-        },
-        {
-            "id": 14,
-            "name": "Room/Sync",
             "type": "api"
         },
         {
@@ -1193,74 +1183,6 @@ export const serviceProto: ServiceProto<ServiceType> = {
                     "type": {
                         "type": "Reference",
                         "target": "../models/GameModels/RoomInfo"
-                    }
-                }
-            ]
-        },
-        "Room/PtlSync/ReqSync": {
-            "type": "Interface",
-            "extends": [
-                {
-                    "id": 0,
-                    "type": {
-                        "type": "Reference",
-                        "target": "base/AuthenticatedRequest"
-                    }
-                }
-            ],
-            "properties": [
-                {
-                    "id": 0,
-                    "name": "payload",
-                    "type": {
-                        "type": "String"
-                    }
-                },
-                {
-                    "id": 1,
-                    "name": "kind",
-                    "type": {
-                        "type": "String"
-                    },
-                    "optional": true
-                },
-                {
-                    "id": 2,
-                    "name": "targetUserId",
-                    "type": {
-                        "type": "String"
-                    },
-                    "optional": true
-                }
-            ]
-        },
-        "Room/PtlSync/ResSync": {
-            "type": "Interface",
-            "extends": [
-                {
-                    "id": 0,
-                    "type": {
-                        "type": "Reference",
-                        "target": "base/BaseResponse"
-                    }
-                }
-            ],
-            "properties": [
-                {
-                    "id": 0,
-                    "name": "roomId",
-                    "type": {
-                        "type": "String"
-                    }
-                },
-                {
-                    "id": 1,
-                    "name": "deliveredUserIds",
-                    "type": {
-                        "type": "Array",
-                        "elementType": {
-                            "type": "String"
-                        }
                     }
                 }
             ]

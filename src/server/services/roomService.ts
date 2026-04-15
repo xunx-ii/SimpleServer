@@ -210,15 +210,6 @@ export class RoomService {
         return this.toRoomInfo(room);
     }
 
-    async pushSync(token: string, input: {
-        payload: string
-        kind?: string
-        targetUserId?: string
-    }, connId?: string) {
-        const dispatch = await this.prepareSyncDispatch(token, input, connId);
-        this.sendSyncMessage(dispatch.deliveredUserIds, dispatch.message);
-    }
-
     async sync(token: string, input: {
         payload: string
         kind?: string
@@ -226,11 +217,6 @@ export class RoomService {
     }, connId?: string) {
         const dispatch = await this.prepareSyncDispatch(token, input, connId);
         this.sendSyncMessage(dispatch.deliveredUserIds, dispatch.message);
-
-        return {
-            roomId: dispatch.roomId,
-            deliveredUserIds: dispatch.deliveredUserIds
-        };
     }
 
     getUserRoomId(userId: string) {
@@ -543,7 +529,6 @@ export class RoomService {
             : room.members.map(member => member.userId);
 
         return {
-            roomId: room.roomId,
             deliveredUserIds,
             message: {
                 roomId: room.roomId,
